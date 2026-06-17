@@ -13,7 +13,13 @@ export async function GET(req: NextRequest) {
   const apiSecret = process.env.LIVEKIT_API_SECRET!;
 
   try {
-    const at = new AccessToken(apiKey, apiSecret, { identity: username });
+    const uniqueId = `user_${Math.floor(Math.random() * 1000000)}`;
+
+    const at = new AccessToken(apiKey, apiSecret, { 
+      identity: uniqueId, 
+      name: username 
+    });
+    
     at.addGrant({ roomJoin: true, room: room, canPublish: true, canSubscribe: true });
 
     const token = await at.toJwt();
