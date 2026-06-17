@@ -9,6 +9,12 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Missing room or username' }, { status: 400 });
   }
 
+  // 🔴 Strict Backend Security: Only allow correctly formatted rooms
+  const isValidRoom = /^dSpaces-\d{4}$/.test(room);
+  if (!isValidRoom) {
+    return NextResponse.json({ error: 'Invalid Room ID Format. Access Denied.' }, { status: 403 });
+  }
+
   const apiKey = process.env.LIVEKIT_API_KEY!;
   const apiSecret = process.env.LIVEKIT_API_SECRET!;
 
