@@ -9,6 +9,7 @@ import { useWallet } from "@solana/wallet-adapter-react";
 export default function RoomPage() {
   const [token, setToken] = useState("");
   const [serverUrl, setServerUrl] = useState("");
+  const [roomId, setRoomId] = useState("");
   const [copied, setCopied] = useState(false);
   const router = useRouter();
   const { connected, publicKey } = useWallet();
@@ -20,6 +21,7 @@ export default function RoomPage() {
       try {
         const urlParams = new URLSearchParams(window.location.search);
         const roomName = urlParams.get("id") || "dSpaces-Global";
+        setRoomId(roomName);
         const userName = urlParams.get("name") || (publicKey ? publicKey.toString().substring(0, 6) : "Web3User");
 
         const response = await fetch(
@@ -40,7 +42,9 @@ export default function RoomPage() {
   }, [connected, publicKey]);
 
   const copyInviteLink = () => {
-    navigator.clipboard.writeText(window.location.href);
+    const url = new URL(window.location.href);
+    const cleanLink = `${url.origin}/?room=${roomId}`;
+    navigator.clipboard.writeText(cleanLink);
     setCopied(true);
     setTimeout(() => setCopied(false), 3000);
   };
@@ -55,14 +59,16 @@ export default function RoomPage() {
   }
 
   return (
-    <div className="relative flex flex-col h-[100dvh] w-full bg-black overflow-hidden">
-      <div className="absolute top-2 left-2 z-[9999] flex items-center gap-2 bg-black/80 backdrop-blur-md px-3 py-2 rounded-lg border border-gray-700">
-        <button onClick={copyInviteLink} className={`px-4 py-1 text-sm font-bold rounded-md ${copied ? "bg-green-500" : "bg-blue-600"} text-white`}>
+    <div className="relative h-[100dvh] w-full bg-black overflow-hidden">
+      
+      <div className="absolute top-4 left-4 z-[999] flex items-center gap-2 bg-black/60 backdrop-blur-md px-3 py-2 rounded-lg border border-gray-700">
+        <span className="text-gray-300 text-xs sm:text-sm font-semibold mr-2">{roomId}</span>
+        <button onClick={copyInviteLink} className={`px-4 py-1 text-xs sm:text-sm font-bold rounded-md transition-colors ${copied ? "bg-green-500 text-white" : "bg-blue-600 hover:bg-blue-700 text-white"}`}>
           {copied ? "Copied!" : "Copy Link"}
         </button>
       </div>
 
-      <div className="flex-1 w-full h-full pt-16">
+      <div className="absolute inset-0 w-full h-full">
         <LiveKitRoom
           video={true}
           audio={true}
@@ -74,6 +80,7 @@ export default function RoomPage() {
           <VideoConference />
         </LiveKitRoom>
       </div>
+      
     </div>
   );
 }
