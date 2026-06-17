@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
+import { useWallet } from "@solana/wallet-adapter-react";
 
 const WalletMultiButton = dynamic(
   () => import("@solana/wallet-adapter-react-ui").then((mod) => mod.WalletMultiButton),
@@ -11,22 +12,100 @@ const WalletMultiButton = dynamic(
 
 export default function Home() {
   const router = useRouter();
+  const { connected, publicKey } = useWallet();
+  
   const [roomId, setRoomId] = useState("");
   const [userName, setUserName] = useState("");
+  const [email, setEmail] = useState("");
+  const [otp, setOtp] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
+  const [emailAuthenticated, setEmailAuthenticated] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [statusMsg, setStatusMsg] = useState("");
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const joinId = urlParams.get("room") || urlParams.get("id");
     if (joinId) setRoomId(joinId);
+
+    const savedEmail = localStorage.getItem("dspaces_email");
+    if (savedEmail) {
+      setEmailAuthenticated(true);
+      if (!userName) setUserName(savedEmail.split("@")[0]);
+    }
   }, []);
 
+  const handleSendOTP = async () => {
+    if (!email.trim()) {
+      alert("Please enter a valid email address.");
+      return;
+    }
+    setLoading(true);
+    setStatusMsg("Sending...");
+    try {
+      const res = await fetch("/api/send-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim() }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setOtpSent(true);
+        setStatusMsg("OTP sent to your email!");
+      } else {
+        setStatusMsg(data.error || "Failed to send OTP.");
+      }
+    } catch (err) {
+      setStatusMsg("Error sending OTP.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyOTP = async () => {
+    if (!otp.trim()) {
+      alert("Please enter the 6-digit OTP.");
+      return;
+    }
+    setLoading(true);
+    setStatusMsg("Verifying...");
+    try {
+      const res = await fetch("/api/verify-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ otp: otp.trim() }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setEmailAuthenticated(true);
+        localStorage.setItem("dspaces_email", data.email);
+        setUserName(data.email.split("@")[0]);
+        setStatusMsg("Email verified successfully!");
+      } else {
+        setStatusMsg(data.error || "Invalid OTP.");
+      }
+    } catch (err) {
+      setStatusMsg("Verification error.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleCreateRoom = () => {
+    if (!connected && !emailAuthenticated) {
+      alert("Please connect your wallet or sign in with email first.");
+      return;
+    }
     const randomCode = Math.floor(1000 + Math.random() * 9000);
-    const finalName = userName.trim() || "Web3User";
+    const finalName = userName.trim() || "User";
     router.push(`/room?id=dSpaces-${randomCode}&name=${finalName}&ishost=true`);
   };
 
   const handleJoinRoom = () => {
+    if (!connected && !emailAuthenticated) {
+      alert("Please connect your wallet or sign in with email first.");
+      return;
+    }
     if (roomId.trim() !== "") {
       let finalId = roomId.trim();
       if (finalId.includes("room=")) {
@@ -34,11 +113,20 @@ export default function Home() {
       } else if (finalId.includes("id=")) {
         finalId = finalId.split("id=")[1].split("&")[0];
       }
-      const finalName = userName.trim() || "Web3User";
+      const finalName = userName.trim() || "User";
       router.push(`/room?id=${finalId}&name=${finalName}`);
     } else {
       alert("Please enter a Room ID or Link to join.");
     }
+  };
+
+  const handleLogoutEmail = () => {
+    localStorage.removeItem("dspaces_email");
+    setEmailAuthenticated(false);
+    setEmail("");
+    setOtp("");
+    setOtpSent(false);
+    setStatusMsg("Logged out from email.");
   };
 
   return (
@@ -54,29 +142,107 @@ export default function Home() {
         </h1>
         
         <div className="flex flex-col gap-4 w-full max-w-sm bg-gray-900 p-6 rounded-2xl border border-gray-800 shadow-2xl">
-          <input 
-            type="text" 
-            placeholder="Enter Your Name..." 
-            value={userName}
-            onChange={(e) => setUserName(e.target.value)}
-            className="px-4 py-3 bg-gray-950 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500 w-full"
-          />
-          <input 
-            type="text" 
-            placeholder="Room ID or Link (Optional)..." 
-            value={roomId}
-            onChange={(e) => setRoomId(e.target.value)}
-            className="px-4 py-3 bg-gray-950 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500 w-full"
-          />
           
-          <div className="flex flex-col gap-2 w-full mt-2">
-            <button onClick={handleCreateRoom} className="py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition-all">
-              Create New Room
-            </button>
-            <button onClick={handleJoinRoom} className="py-3 bg-gray-800 hover:bg-gray-700 text-white font-bold rounded-lg transition-all border border-gray-700">
-              Join Existing
-            </button>
+          {/* Status Badge */}
+          <div className="text-xs mb-1 p-2 bg-gray-950 rounded-lg border border-gray-800 text-left">
+            {connected && (
+              <p className="text-green-400 font-semibold">✓ Wallet Connected: {publicKey?.toString().substring(0, 6)}...</p>
+            )}
+            {emailAuthenticated && (
+              <div className="flex justify-between items-center mt-1">
+                <p className="text-green-400 font-semibold truncate mr-2">✓ Email: {localStorage.getItem("dspaces_email")}</p>
+                <button onClick={handleLogoutEmail} className="text-red-400 underline hover:text-red-300">Logout</button>
+              </div>
+            )}
+            {!connected && !emailAuthenticated && (
+              <p className="text-yellow-500">Connect Wallet OR Sign in with Email below to unlock meetings.</p>
+            )}
           </div>
+
+          {/* Email OTP Section */}
+          {!emailAuthenticated && (
+            <div className="flex flex-col gap-2 p-3 bg-gray-950 rounded-xl border border-gray-800 text-left">
+              <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Email OTP Login</label>
+              <div className="flex gap-2">
+                <input 
+                  type="email" 
+                  placeholder="name@example.com" 
+                  value={email}
+                  disabled={otpSent}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="flex-1 px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-blue-500"
+                />
+                {!otpSent ? (
+                  <button 
+                    onClick={handleSendOTP} 
+                    disabled={loading}
+                    className="px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-white font-bold rounded-lg text-xs transition-all"
+                  >
+                    {loading ? "Wait..." : "Get OTP"}
+                  </button>
+                ) : (
+                  <button 
+                    onClick={() => { setOtpSent(false); setOtp(""); }} 
+                    className="px-2 py-1 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-xs"
+                  >
+                    Edit
+                  </button>
+                )}
+              </div>
+
+              {otpSent && (
+                <div className="flex flex-col gap-2 mt-2">
+                  <input 
+                    type="text" 
+                    placeholder="Enter 6-Digit Code" 
+                    value={otp}
+                    maxLength={6}
+                    onChange={(e) => setOtp(e.target.value)}
+                    className="px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm text-center tracking-widest focus:outline-none focus:border-blue-500"
+                  />
+                  <button 
+                    onClick={handleVerifyOTP}
+                    disabled={loading}
+                    className="w-full py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-800 text-white font-bold rounded-lg text-sm transition-all"
+                  >
+                    {loading ? "Verifying..." : "Verify & Login"}
+                  </button>
+                </div>
+              )}
+
+              {statusMsg && (
+                <p className="text-xs text-center font-medium mt-1 text-blue-400">{statusMsg}</p>
+              )}
+            </div>
+          )}
+
+          {/* Room Controls */}
+          <div className="flex flex-col gap-3 mt-1 pt-2 border-t border-gray-800">
+            <input 
+              type="text" 
+              placeholder="Enter Your Name..." 
+              value={userName}
+              onChange={(e) => setUserName(e.target.value)}
+              className="px-4 py-3 bg-gray-950 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500 w-full"
+            />
+            <input 
+              type="text" 
+              placeholder="Room ID or Link (Optional)..." 
+              value={roomId}
+              onChange={(e) => setRoomId(e.target.value)}
+              className="px-4 py-3 bg-gray-950 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500 w-full"
+            />
+            
+            <div className="flex flex-col gap-2 w-full mt-1">
+              <button onClick={handleCreateRoom} className="py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition-all shadow-lg">
+                Create New Room
+              </button>
+              <button onClick={handleJoinRoom} className="py-3 bg-gray-800 hover:bg-gray-700 text-white font-bold rounded-lg transition-all border border-gray-700">
+                Join Existing
+              </button>
+            </div>
+          </div>
+
         </div>
       </section>
     </main>
