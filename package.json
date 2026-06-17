@@ -9,6 +9,15 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@dtelecom/components-react": "^1.0.46",
+    "@dtelecom/components-styles": "^1.0.27",
+    "@dtelecom/livekit-client": "^1.12.24",
+    "@dtelecom/server-sdk-js": "^3.3.0",
+    "@solana/wallet-adapter-base": "^0.9.27",
+    "@solana/wallet-adapter-react": "^0.15.39",
+    "@solana/wallet-adapter-react-ui": "^0.9.39",
+    "@solana/web3.js": "^1.98.4",
+    "livekit-server-sdk": "^2.15.4",
     "next": "16.2.9",
     "react": "19.2.4",
     "react-dom": "19.2.4"
