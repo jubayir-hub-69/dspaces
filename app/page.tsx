@@ -11,13 +11,23 @@ const WalletMultiButton = dynamic(
 
 export default function Home() {
   const router = useRouter();
-  const [roomName, setRoomName] = useState("");
+  const [inputValue, setInputValue] = useState("");
+
+  const handleCreateRoom = () => {
+    const baseName = inputValue.trim() || "dSpaces";
+    const randomCode = Math.floor(1000 + Math.random() * 9000);
+    router.push(`/room?id=${baseName}-${randomCode}`);
+  };
 
   const handleJoinRoom = () => {
-    if (roomName.trim() !== "") {
-      router.push(`/room?id=${roomName.trim()}`);
+    if (inputValue.trim() !== "") {
+      let finalId = inputValue.trim();
+      if (finalId.includes("?id=")) {
+        finalId = finalId.split("?id=")[1];
+      }
+      router.push(`/room?id=${finalId}`);
     } else {
-      router.push(`/room?id=dSpaces-Global`);
+      alert("Please enter a Room ID or Link to join.");
     }
   };
 
@@ -33,40 +43,34 @@ export default function Home() {
           The Future of Web3 Meetings
         </h1>
         <p className="text-xl text-gray-400 mb-10 max-w-2xl">
-          Connect your wallet, create a custom room, and collaborate in real-time with your community.
+          Create a unique secure room or join an existing one using a link.
         </p>
         
-        <div className="flex flex-col sm:flex-row gap-4 items-center mt-4">
+        <div className="flex flex-col items-center gap-6 mt-4 w-full max-w-lg bg-gray-900 p-8 rounded-2xl border border-gray-800 shadow-2xl">
           <input 
             type="text" 
-            placeholder="Enter Room Name..." 
-            value={roomName}
-            onChange={(e) => setRoomName(e.target.value)}
-            className="px-6 py-4 bg-gray-900 border border-gray-700 rounded-full text-white focus:outline-none focus:border-blue-500 text-lg w-72"
+            placeholder="Enter Name, Code, or Paste Link..." 
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            className="px-6 py-4 bg-gray-950 border border-gray-700 rounded-xl text-white focus:outline-none focus:border-blue-500 text-lg w-full text-center"
           />
-          <button 
-            onClick={handleJoinRoom}
-            className="px-10 py-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-full transition-all text-lg shadow-lg hover:shadow-blue-500/20"
-          >
-            Join Meeting
-          </button>
+          
+          <div className="flex flex-col sm:flex-row gap-4 w-full">
+            <button 
+              onClick={handleCreateRoom}
+              className="flex-1 py-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition-all text-lg shadow-lg hover:shadow-blue-500/20"
+            >
+              + Create New Room
+            </button>
+            <button 
+              onClick={handleJoinRoom}
+              className="flex-1 py-4 bg-gray-800 hover:bg-gray-700 text-white font-bold rounded-xl transition-all text-lg border border-gray-700"
+            >
+              Join Existing
+            </button>
+          </div>
         </div>
       </section>
-
-      <section className="grid grid-cols-1 md:grid-cols-3 gap-8 px-12 py-20 mt-10">
-        <FeatureCard title="Secure" description="Encrypted video rooms powered by dTelecom." />
-        <FeatureCard title="Web3 Native" description="Connect with Solana Wallet seamlessly." />
-        <FeatureCard title="Custom Rooms" description="Create or join private meeting rooms." />
-      </section>
     </main>
-  );
-}
-
-function FeatureCard({ title, description }: { title: string; description: string }) {
-  return (
-    <div className="p-8 bg-gray-900 rounded-2xl border border-gray-800 hover:border-blue-500 transition-colors">
-      <h3 className="text-2xl font-bold mb-4 text-blue-400">{title}</h3>
-      <p className="text-gray-400">{description}</p>
-    </div>
   );
 }
