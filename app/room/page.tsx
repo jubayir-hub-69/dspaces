@@ -10,12 +10,24 @@ export default function RoomPage() {
   const [token, setToken] = useState("");
   const [serverUrl, setServerUrl] = useState("");
   const [roomId, setRoomId] = useState("");
-  const [copied, setCopied] = useState(false);
+  const [accessAllowed, setAccessAllowed] = useState(false);
+  const [checkingAuth, setCheckingAuth] = useState(true);
   const router = useRouter();
   const { connected, publicKey } = useWallet();
 
   useEffect(() => {
-    if (!connected) return;
+    // Check if user is logged in via Wallet or Email
+    const savedEmail = localStorage.getItem("dspaces_email");
+    if (connected || savedEmail) {
+      setAccessAllowed(true);
+    } else {
+      setAccessAllowed(false);
+    }
+    setCheckingAuth(false);
+  }, [connected]);
+
+  useEffect(() => {
+    if (!accessAllowed) return;
 
     (async () => {
       try {
@@ -23,77 +35,75 @@ export default function RoomPage() {
         const roomName = urlParams.get("id") || "dSpaces-Global";
         setRoomId(roomName);
         
-        let userName = urlParams.get("name") || (publicKey ? publicKey.toString().substring(0, 6) : "Web3User");
-        const isHost = urlParams.get("ishost") === "true";
+        const savedEmail = localStorage.getItem("dspaces_email");
+        const defaultUser = savedEmail ? savedEmail.split("@")[0] : (publicKey ? publicKey.toString().substring(0, 6) : "User");
+        let userName = urlParams.get("name") || defaultUser;
         
-        if (isHost) {
-          userName = `${userName} (Host)`;
-        }
+        if (urlParams.get("ishost") === "true") userName = `${userName} (Host)`;
 
-        const response = await fetch(
-          `/api/get-token?room=${roomName}&username=${userName}`
-        );
+        const response = await fetch(`/api/get-token?room=${roomName}&username=${userName}`);
         const data = await response.json();
 
         if (data.token && data.wsUrl) {
           setToken(data.token);
           setServerUrl(data.wsUrl);
-        } else {
-          console.error("Token/URL Error:", data.error);
         }
       } catch (error) {
-        console.error("Failed to fetch token:", error);
+        console.error("Token error:", error);
       }
     })();
-  }, [connected, publicKey]);
+  }, [accessAllowed, connected, publicKey]);
 
-  const copyInviteLink = () => {
-    const url = new URL(window.location.href);
-    const cleanLink = `${url.origin}/?room=${roomId}`;
-    navigator.clipboard.writeText(cleanLink);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 3000);
-  };
-
-  if (!connected) {
+  // State 1: Checking authentication
+  if (checkingAuth) {
     return (
-      <main className="flex flex-col items-center justify-center min-h-[100dvh] bg-gray-950 text-white p-6 text-center">
-        <h2 className="text-red-500 font-bold text-3xl mb-4">Access Denied!</h2>
-        <button onClick={() => router.push('/')} className="px-8 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg font-bold">Go Back</button>
+      <main className="flex items-center justify-center min-h-screen bg-[#030712] text-white">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+          <p className="text-gray-400 font-medium">Verifying access...</p>
+        </div>
       </main>
     );
   }
 
-  if (token === "" || serverUrl === "") {
+  // State 2: Access denied (Not logged in)
+  if (!accessAllowed) {
     return (
-      <main className="flex items-center justify-center min-h-[100dvh] bg-black text-white text-lg">
-        Connecting to secure room...
+      <main className="flex flex-col items-center justify-center min-h-screen bg-[#030712] text-white p-4 text-center">
+        <h1 className="text-4xl font-black text-red-500 mb-4">Access Denied!</h1>
+        <p className="text-gray-400 mb-8">You need to log in with Email or Wallet to join a room.</p>
+        <button onClick={() => router.push('/')} className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition-all">
+          Go to Login Page
+        </button>
       </main>
     );
   }
 
+  // State 3: Generating token / Connecting
+  if (!token || !serverUrl) {
+    return (
+      <main className="flex items-center justify-center min-h-screen bg-[#030712] text-white">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+          <p className="text-gray-400 font-medium">Connecting to secure room...</p>
+        </div>
+      </main>
+    );
+  }
+
+  // State 4: Room connected successfully
   return (
-    <main data-lk-theme="default" className="w-full h-[100dvh] bg-black relative overflow-hidden">
-      
+    <main data-lk-theme="default" className="w-full h-screen bg-[#030712] relative overflow-hidden">
       <style dangerouslySetInnerHTML={{__html: `
         .lk-participant-name {
-          background-color: #2563eb !important;
+          background-color: rgba(37, 99, 235, 0.9) !important;
           color: #ffffff !important;
           padding: 6px 12px !important;
           border-radius: 8px !important;
           font-weight: bold !important;
-          box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2) !important;
-          border: 1px solid #3b82f6 !important;
+          backdrop-filter: blur(10px) !important;
         }
       `}} />
-
-      <div className="absolute top-4 left-4 z-[999] flex items-center gap-2 bg-black/60 backdrop-blur-md px-3 py-2 rounded-lg border border-gray-700">
-        <span className="text-gray-300 text-xs sm:text-sm font-semibold mr-2">{roomId}</span>
-        <button onClick={copyInviteLink} className={`px-4 py-1 text-xs sm:text-sm font-bold rounded-md transition-colors ${copied ? "bg-green-500 text-white" : "bg-blue-600 hover:bg-blue-700 text-white"}`}>
-          {copied ? "Copied!" : "Copy Link"}
-        </button>
-      </div>
-
       <LiveKitRoom
         video={true}
         audio={true}
@@ -105,7 +115,6 @@ export default function RoomPage() {
       >
         <VideoConference />
       </LiveKitRoom>
-      
     </main>
   );
 }
