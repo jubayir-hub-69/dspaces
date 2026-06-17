@@ -11,61 +11,59 @@ const WalletMultiButton = dynamic(
 
 export default function Home() {
   const router = useRouter();
-  const [inputValue, setInputValue] = useState("");
+  const [roomId, setRoomId] = useState("");
+  const [userName, setUserName] = useState("");
 
   const handleCreateRoom = () => {
-    const baseName = inputValue.trim() || "dSpaces";
+    const baseName = roomId.trim() || "dSpaces";
     const randomCode = Math.floor(1000 + Math.random() * 9000);
-    router.push(`/room?id=${baseName}-${randomCode}`);
+    const finalName = userName.trim() || "Web3User";
+    router.push(`/room?id=${baseName}-${randomCode}&name=${finalName}`);
   };
 
   const handleJoinRoom = () => {
-    if (inputValue.trim() !== "") {
-      let finalId = inputValue.trim();
-      if (finalId.includes("?id=")) {
-        finalId = finalId.split("?id=")[1];
-      }
-      router.push(`/room?id=${finalId}`);
+    if (roomId.trim() !== "") {
+      const finalId = roomId.includes("?id=") ? roomId.split("?id=")[1] : roomId;
+      const finalName = userName.trim() || "Web3User";
+      router.push(`/room?id=${finalId}&name=${finalName}`);
     } else {
       alert("Please enter a Room ID or Link to join.");
     }
   };
 
   return (
-    <main className="min-h-screen bg-gray-950 text-white">
-      <nav className="flex justify-between items-center p-8">
+    <main className="min-h-screen bg-gray-950 text-white p-4">
+      <nav className="flex justify-between items-center p-4">
         <h1 className="text-2xl font-bold text-blue-500">dSpaces</h1>
         <WalletMultiButton />
       </nav>
 
-      <section className="flex flex-col items-center justify-center py-20 text-center">
-        <h1 className="text-6xl font-extrabold mb-6 bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
+      <section className="flex flex-col items-center justify-center py-10 text-center">
+        <h1 className="text-4xl sm:text-6xl font-extrabold mb-6 bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
           The Future of Web3 Meetings
         </h1>
-        <p className="text-xl text-gray-400 mb-10 max-w-2xl">
-          Create a unique secure room or join an existing one using a link.
-        </p>
         
-        <div className="flex flex-col items-center gap-6 mt-4 w-full max-w-lg bg-gray-900 p-8 rounded-2xl border border-gray-800 shadow-2xl">
+        <div className="flex flex-col gap-4 w-full max-w-sm bg-gray-900 p-6 rounded-2xl border border-gray-800 shadow-2xl">
           <input 
             type="text" 
-            placeholder="Enter Name, Code, or Paste Link..." 
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            className="px-6 py-4 bg-gray-950 border border-gray-700 rounded-xl text-white focus:outline-none focus:border-blue-500 text-lg w-full text-center"
+            placeholder="Enter Your Name..." 
+            value={userName}
+            onChange={(e) => setUserName(e.target.value)}
+            className="px-4 py-3 bg-gray-950 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500 w-full"
+          />
+          <input 
+            type="text" 
+            placeholder="Room ID or Link..." 
+            value={roomId}
+            onChange={(e) => setRoomId(e.target.value)}
+            className="px-4 py-3 bg-gray-950 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500 w-full"
           />
           
-          <div className="flex flex-col sm:flex-row gap-4 w-full">
-            <button 
-              onClick={handleCreateRoom}
-              className="flex-1 py-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition-all text-lg shadow-lg hover:shadow-blue-500/20"
-            >
-              + Create New Room
+          <div className="flex flex-col gap-2 w-full mt-2">
+            <button onClick={handleCreateRoom} className="py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition-all">
+              Create New Room
             </button>
-            <button 
-              onClick={handleJoinRoom}
-              className="flex-1 py-4 bg-gray-800 hover:bg-gray-700 text-white font-bold rounded-xl transition-all text-lg border border-gray-700"
-            >
+            <button onClick={handleJoinRoom} className="py-3 bg-gray-800 hover:bg-gray-700 text-white font-bold rounded-lg transition-all border border-gray-700">
               Join Existing
             </button>
           </div>
