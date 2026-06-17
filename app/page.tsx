@@ -16,21 +16,22 @@ export default function Home() {
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
-    const joinId = urlParams.get("room");
+    const joinId = urlParams.get("room") || urlParams.get("id");
     if (joinId) setRoomId(joinId);
   }, []);
 
   const handleCreateRoom = () => {
-    const baseName = roomId.trim() || "dSpaces";
     const randomCode = Math.floor(1000 + Math.random() * 9000);
     const finalName = userName.trim() || "Web3User";
-    router.push(`/room?id=${baseName}-${randomCode}&name=${finalName}`);
+    router.push(`/room?id=dSpaces-${randomCode}&name=${finalName}`);
   };
 
   const handleJoinRoom = () => {
     if (roomId.trim() !== "") {
       let finalId = roomId.trim();
-      if (finalId.includes("id=")) {
+      if (finalId.includes("room=")) {
+        finalId = finalId.split("room=")[1].split("&")[0];
+      } else if (finalId.includes("id=")) {
         finalId = finalId.split("id=")[1].split("&")[0];
       }
       const finalName = userName.trim() || "Web3User";
@@ -62,7 +63,7 @@ export default function Home() {
           />
           <input 
             type="text" 
-            placeholder="Room ID or Link..." 
+            placeholder="Room ID or Link (Optional)..." 
             value={roomId}
             onChange={(e) => setRoomId(e.target.value)}
             className="px-4 py-3 bg-gray-950 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500 w-full"
