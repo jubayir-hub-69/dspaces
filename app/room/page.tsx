@@ -3,16 +3,22 @@
 import { LiveKitRoom, VideoConference } from "@dtelecom/components-react";
 import "@dtelecom/components-styles";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useWallet } from "@solana/wallet-adapter-react";
 
 export default function RoomPage() {
   const [token, setToken] = useState("");
   const [serverUrl, setServerUrl] = useState("");
+  const router = useRouter();
+  const { connected, publicKey } = useWallet();
 
   useEffect(() => {
+    if (!connected) return;
+
     (async () => {
       try {
         const roomName = "dSpaces-Global-Hub";
-        const participantName = "User_" + Math.floor(Math.random() * 1000);
+        const participantName = publicKey ? publicKey.toString().substring(0, 6) : "User_Web3";
 
         const response = await fetch(
           `/api/get-token?room=${roomName}&username=${participantName}`
@@ -29,7 +35,22 @@ export default function RoomPage() {
         console.error("Failed to fetch token:", error);
       }
     })();
-  }, []);
+  }, [connected, publicKey]);
+
+  if (!connected) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-gray-950 text-white text-xl">
+        <h2 className="text-red-500 font-bold text-4xl mb-4">Access Denied!</h2>
+        <p className="mb-8 text-gray-400">You must connect your Solana Wallet to join the room.</p>
+        <button 
+          onClick={() => router.push('/')}
+          className="px-8 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg font-bold transition-colors"
+        >
+          Go Back to Home
+        </button>
+      </div>
+    );
+  }
 
   if (token === "" || serverUrl === "") {
     return (
@@ -47,6 +68,7 @@ export default function RoomPage() {
         token={token}
         serverUrl={serverUrl}
         connect={true}
+        onDisconnected={() => router.push('/')}
       >
         <VideoConference />
       </LiveKitRoom>
