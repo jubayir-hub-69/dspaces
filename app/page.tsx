@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 const WalletMultiButton = dynamic(
   () => import("@solana/wallet-adapter-react-ui").then((mod) => mod.WalletMultiButton),
@@ -14,6 +14,12 @@ export default function Home() {
   const [roomId, setRoomId] = useState("");
   const [userName, setUserName] = useState("");
 
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const joinId = urlParams.get("room");
+    if (joinId) setRoomId(joinId);
+  }, []);
+
   const handleCreateRoom = () => {
     const baseName = roomId.trim() || "dSpaces";
     const randomCode = Math.floor(1000 + Math.random() * 9000);
@@ -23,7 +29,10 @@ export default function Home() {
 
   const handleJoinRoom = () => {
     if (roomId.trim() !== "") {
-      const finalId = roomId.includes("?id=") ? roomId.split("?id=")[1] : roomId;
+      let finalId = roomId.trim();
+      if (finalId.includes("id=")) {
+        finalId = finalId.split("id=")[1].split("&")[0];
+      }
       const finalName = userName.trim() || "Web3User";
       router.push(`/room?id=${finalId}&name=${finalName}`);
     } else {
