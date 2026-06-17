@@ -125,17 +125,14 @@ export default function Home() {
     setStatusMsg("");
   };
 
-  // মূল ভেরিফিকেশন লজিক
   const isAuthenticated = connected || emailAuthenticated;
 
   return (
     <main className="min-h-screen bg-[#030712] text-white relative overflow-hidden font-sans selection:bg-blue-500/30">
       
-      {/* Premium Background Effects */}
       <div className="absolute top-[-20%] left-[-10%] w-[60%] h-[60%] bg-blue-600/10 blur-[150px] rounded-full pointer-events-none"></div>
       <div className="absolute bottom-[-20%] right-[-10%] w-[60%] h-[60%] bg-purple-600/10 blur-[150px] rounded-full pointer-events-none"></div>
 
-      {/* CSS Animations */}
       <style dangerouslySetInnerHTML={{__html: `
         @keyframes fadeInUp {
           from { opacity: 0; transform: translateY(20px); }
@@ -151,7 +148,6 @@ export default function Home() {
         }
       `}} />
 
-      {/* Smart Navbar */}
       <nav className="relative z-10 flex justify-between items-center px-4 sm:px-8 py-5 border-b border-white/5 bg-black/20 backdrop-blur-md">
         <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-500 bg-clip-text text-transparent drop-shadow-sm cursor-pointer hover:scale-105 transition-transform">
           dSpaces
@@ -163,12 +159,10 @@ export default function Home() {
               Not Connected
             </div>
           ) : connected ? (
-            /* Wallet Logged In - Handles its own disconnect */
             <div className="hover:scale-105 transition-transform">
               <WalletMultiButton className="!bg-indigo-600 hover:!bg-indigo-700 !h-10 !px-6 !rounded-xl !font-bold !shadow-lg !shadow-indigo-500/20" />
             </div>
           ) : (
-            /* Email Logged In - Shows Email + Custom Logout */
             <div className="flex items-center gap-3 bg-gray-900/80 border border-gray-700/50 rounded-xl p-1.5 pl-4 shadow-lg animate-fade-in-up">
               <div className="flex items-center gap-2 max-w-[120px] sm:max-w-xs">
                 <span className="relative flex h-2.5 w-2.5">
@@ -188,7 +182,6 @@ export default function Home() {
         </div>
       </nav>
 
-      {/* Main Content Area */}
       <section className="relative z-10 flex flex-col items-center justify-center min-h-[80vh] px-4 py-12 text-center animate-fade-in-up">
         
         {!isAuthenticated && (
@@ -205,10 +198,8 @@ export default function Home() {
         <div className="w-full max-w-md glass-panel p-8 rounded-3xl transition-all duration-500">
 
           {!isAuthenticated ? (
-            /* --- LOGGED OUT STATE: LOGIN OPTIONS --- */
             <div className="flex flex-col gap-6">
               
-              {/* Wallet Option */}
               <div className="group text-left p-5 rounded-2xl bg-gray-900/40 border border-gray-800 hover:border-indigo-500/50 transition-colors">
                 <label className="flex items-center gap-2 text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-3">
                   <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
@@ -219,14 +210,12 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Divider */}
               <div className="flex items-center opacity-40">
                 <div className="flex-grow border-t border-gray-600"></div>
                 <span className="px-4 text-gray-400 text-xs font-bold uppercase tracking-widest">OR</span>
                 <div className="flex-grow border-t border-gray-600"></div>
               </div>
 
-              {/* Email Option */}
               <div className="text-left p-5 rounded-2xl bg-gray-900/40 border border-gray-800 hover:border-blue-500/50 transition-colors">
                 <label className="flex items-center gap-2 text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-3">
                   <span className="w-2 h-2 rounded-full bg-blue-500"></span>
@@ -280,13 +269,9 @@ export default function Home() {
 
             </div>
           ) : (
-            /* --- LOGGED IN STATE: ROOM CONTROLS --- */
             <div className="flex flex-col gap-5 animate-fade-in-up">
               
               <div className="mb-2">
-                <div className="inline-block px-4 py-1.5 rounded-full bg-green-500/10 border border-green-500/20 text-green-400 text-xs font-bold tracking-wider uppercase mb-4">
-                  Authentication Successful
-                </div>
                 <h2 className="text-2xl font-bold">Ready to Connect?</h2>
                 <p className="text-gray-400 text-sm mt-1">Set your name and create or join a secure room.</p>
               </div>
