@@ -5,7 +5,7 @@ import { cookies } from 'next/headers';
 export async function POST(req: Request) {
   try {
     const { otp } = await req.json();
-    const cookieStore = cookies();
+    const cookieStore = await cookies();
     const hash = cookieStore.get('otp_hash')?.value;
     const email = cookieStore.get('otp_email')?.value;
 
