@@ -23,7 +23,7 @@ export default function Home() {
   const handleCreateRoom = () => {
     const randomCode = Math.floor(1000 + Math.random() * 9000);
     const finalName = userName.trim() || "Web3User";
-    router.push(`/room?id=dSpaces-${randomCode}&name=${finalName}`);
+    router.push(`/room?id=dSpaces-${randomCode}&name=${finalName}&ishost=true`);
   };
 
   const handleJoinRoom = () => {
