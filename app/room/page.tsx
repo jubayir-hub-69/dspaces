@@ -50,12 +50,12 @@ export default function RoomPage() {
 
   if (!connected) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-gray-950 text-white text-xl">
-        <h2 className="text-red-500 font-bold text-4xl mb-4">Access Denied!</h2>
-        <p className="mb-8 text-gray-400">You must connect your Solana Wallet to join the room.</p>
+      <div className="flex flex-col items-center justify-center min-h-[100dvh] bg-gray-950 text-white p-6 text-center">
+        <h2 className="text-red-500 font-bold text-3xl sm:text-4xl mb-4">Access Denied!</h2>
+        <p className="mb-8 text-sm sm:text-base text-gray-400">You must connect your Solana Wallet to join the room.</p>
         <button 
           onClick={() => router.push('/')}
-          className="px-8 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg font-bold transition-colors"
+          className="px-6 py-3 sm:px-8 sm:py-3 bg-blue-600 hover:bg-blue-700 rounded-lg font-bold transition-colors w-full sm:w-auto"
         >
           Go Back to Home
         </button>
@@ -65,42 +65,44 @@ export default function RoomPage() {
 
   if (token === "" || serverUrl === "") {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-950 text-white text-xl">
+      <div className="flex items-center justify-center min-h-[100dvh] bg-gray-950 text-white text-lg sm:text-xl">
         Generating secure connection...
       </div>
     );
   }
 
   return (
-    <div style={{ height: "100vh", position: "relative" }}>
+    <div className="relative flex flex-col h-[100dvh] w-full bg-black overflow-hidden">
       
-      {/* Floating Copy Link Bar */}
-      <div className="absolute top-4 left-4 z-50 flex items-center gap-4 bg-black/70 backdrop-blur-md px-5 py-3 rounded-2xl border border-gray-700 shadow-2xl">
-        <div className="flex flex-col">
-          <span className="text-xs text-gray-400 uppercase tracking-wider">Room ID</span>
-          <span className="font-bold text-white text-lg">{roomId}</span>
+      {/* Responsive Floating Copy Link Bar */}
+      <div className="absolute top-2 left-2 sm:top-4 sm:left-4 z-50 flex items-center gap-2 sm:gap-4 bg-black/80 backdrop-blur-md px-3 py-2 sm:px-5 sm:py-3 rounded-lg sm:rounded-2xl border border-gray-700 shadow-2xl max-w-[95vw]">
+        <div className="flex flex-col min-w-0">
+          <span className="text-[10px] sm:text-xs text-gray-400 uppercase tracking-wider hidden sm:block">Room ID</span>
+          <span className="font-bold text-white text-xs sm:text-lg truncate">{roomId}</span>
         </div>
-        <div className="w-px h-10 bg-gray-600 mx-2"></div>
+        <div className="w-px h-6 sm:h-10 bg-gray-600 mx-1 sm:mx-2 shrink-0"></div>
         <button 
           onClick={copyInviteLink}
-          className={`px-5 py-2 font-bold rounded-xl transition-all ${
+          className={`px-3 py-1 sm:px-5 sm:py-2 text-xs sm:text-base font-bold rounded-md sm:rounded-xl transition-all shrink-0 ${
             copied ? "bg-green-500 text-white" : "bg-blue-600 hover:bg-blue-700 text-white"
           }`}
         >
-          {copied ? "Copied!" : "Copy Link"}
+          {copied ? "Copied!" : "Copy"}
         </button>
       </div>
 
-      <LiveKitRoom
-        video={true}
-        audio={true}
-        token={token}
-        serverUrl={serverUrl}
-        connect={true}
-        onDisconnected={() => router.push('/')}
-      >
-        <VideoConference />
-      </LiveKitRoom>
+      <div className="flex-1 w-full h-full">
+        <LiveKitRoom
+          video={true}
+          audio={true}
+          token={token}
+          serverUrl={serverUrl}
+          connect={true}
+          onDisconnected={() => router.push('/')}
+        >
+          <VideoConference />
+        </LiveKitRoom>
+      </div>
     </div>
   );
 }
