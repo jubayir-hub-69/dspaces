@@ -17,7 +17,8 @@ export default function RoomPage() {
 
     (async () => {
       try {
-        const roomName = "dSpaces-Global-Hub";
+        const urlParams = new URLSearchParams(window.location.search);
+        const roomName = urlParams.get("id") || "dSpaces-Global";
         const participantName = publicKey ? publicKey.toString().substring(0, 6) : "User_Web3";
 
         const response = await fetch(
@@ -55,7 +56,7 @@ export default function RoomPage() {
   if (token === "" || serverUrl === "") {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-950 text-white text-xl">
-        Connecting to dTelecom Network...
+        Connecting to secure room...
       </div>
     );
   }
