@@ -6,13 +6,11 @@ import { useEffect, useState, memo } from "react";
 import { useRouter } from "next/navigation";
 import { useWallet } from "@solana/wallet-adapter-react";
 
-// 🚀 dMeet Style Isolated Banner Component
 function InviteBanner({ roomId }: { roomId: string }) {
   const [copied, setCopied] = useState(false);
 
   const copyInviteLink = () => {
     const url = new URL(window.location.href);
-    // லிংকটি এখন হোমপেজে নিয়ে যাবে, ডাইরেক্ট জয়েন করাবে না
     const cleanLink = `${url.origin}/?room=${roomId}`;
     navigator.clipboard.writeText(cleanLink);
     setCopied(true);
@@ -21,12 +19,10 @@ function InviteBanner({ roomId }: { roomId: string }) {
 
   return (
     <>
-      {/* Top Center: Room ID */}
       <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[999] bg-[#1a1a1a]/90 border border-gray-700 px-6 py-2 rounded-xl text-sm text-gray-200 font-bold backdrop-blur-md shadow-lg flex items-center gap-2">
          <span className="text-gray-400 text-[10px] uppercase tracking-wider font-normal">Room ID:</span> {roomId}
       </div>
 
-      {/* Top Right: Copy Link Button */}
       <div className="absolute top-4 right-4 sm:right-8 z-[999]">
         <button
           onClick={copyInviteLink}
@@ -139,9 +135,7 @@ export default function RoomPage() {
 
   return (
     <main data-lk-theme="default" className="w-full h-screen bg-[#0f0f0f] relative overflow-hidden flex flex-col">
-      {/* 🚀 Advanced CSS to match dMeet Layout */}
       <style dangerouslySetInnerHTML={{__html: `
-        /* Participant tags */
         .lk-participant-name {
           background-color: rgba(0, 0, 0, 0.7) !important;
           color: #ffffff !important;
@@ -150,23 +144,17 @@ export default function RoomPage() {
           font-size: 12px !important;
           backdrop-filter: blur(5px) !important;
         }
-        
-        /* Focus Layout for Screen Sharing */
         .lk-focus-layout {
           display: flex !important;
-          flex-direction: column-reverse !important; /* Participants Top, Screen Share Bottom */
+          flex-direction: column-reverse !important;
           height: 100% !important;
           width: 100% !important;
           gap: 10px;
         }
-
-        /* Top Row (Participants) */
         .lk-carousel {
-          margin-top: 70px !important; /* Leave space for our custom top banners */
+          margin-top: 70px !important;
           max-height: 15vh !important;
         }
-
-        /* Screen Share Area */
         .lk-focused-room-screen {
           flex-grow: 1 !important;
           display: flex !important;
@@ -175,18 +163,14 @@ export default function RoomPage() {
           padding: 10px !important;
           width: 100% !important;
         }
-
-        /* Makes the screen share visible completely without cutting */
         .lk-focused-room-screen video {
           max-width: 100% !important;
           max-height: 65vh !important;
-          object-fit: contain !important; /* This fixes the sizing issue */
+          object-fit: contain !important;
           border-radius: 12px !important;
           background-color: #000 !important;
           box-shadow: 0 10px 30px rgba(0,0,0,0.5) !important;
         }
-
-        /* Bottom Control Bar */
         .lk-control-bar {
           background-color: #000 !important;
           border-top: 1px solid #222 !important;
