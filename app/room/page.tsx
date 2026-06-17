@@ -51,24 +51,34 @@ export default function RoomPage() {
 
   if (!connected) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[100dvh] bg-gray-950 text-white p-6 text-center">
+      <div className="flex flex-col items-center justify-center min-h-screen bg-gray-950 text-white p-6 text-center">
         <h2 className="text-red-500 font-bold text-3xl mb-4">Access Denied!</h2>
         <button onClick={() => router.push('/')} className="px-8 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg font-bold">Go Back</button>
       </div>
     );
   }
 
+  if (token === "" || serverUrl === "") {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-gray-950 text-white text-xl">
+        <p>Connecting to secure room...</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="relative h-[100dvh] w-full bg-black overflow-hidden">
+    <main className="h-screen w-full bg-black relative flex flex-col overflow-hidden">
       
-      <div className="absolute top-4 left-4 z-[999] flex items-center gap-2 bg-black/60 backdrop-blur-md px-3 py-2 rounded-lg border border-gray-700">
+      {/* Floating Copy Link Bar */}
+      <div className="absolute top-4 left-4 z-50 flex items-center gap-2 bg-black/70 backdrop-blur-md px-3 py-2 rounded-lg border border-gray-700 shadow-lg">
         <span className="text-gray-300 text-xs sm:text-sm font-semibold mr-2">{roomId}</span>
         <button onClick={copyInviteLink} className={`px-4 py-1 text-xs sm:text-sm font-bold rounded-md transition-colors ${copied ? "bg-green-500 text-white" : "bg-blue-600 hover:bg-blue-700 text-white"}`}>
           {copied ? "Copied!" : "Copy Link"}
         </button>
       </div>
 
-      <div className="absolute inset-0 w-full h-full">
+      {/* LiveKit Video Room Container */}
+      <div className="flex-1 w-full h-full min-h-0">
         <LiveKitRoom
           video={true}
           audio={true}
@@ -76,11 +86,12 @@ export default function RoomPage() {
           serverUrl={serverUrl}
           connect={true}
           onDisconnected={() => router.push('/')}
+          style={{ height: "100%", width: "100%", display: "flex", flexDirection: "column" }}
         >
           <VideoConference />
         </LiveKitRoom>
       </div>
       
-    </div>
+    </main>
   );
 }
