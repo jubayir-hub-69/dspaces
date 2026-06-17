@@ -22,7 +22,13 @@ export default function RoomPage() {
         const urlParams = new URLSearchParams(window.location.search);
         const roomName = urlParams.get("id") || "dSpaces-Global";
         setRoomId(roomName);
-        const userName = urlParams.get("name") || (publicKey ? publicKey.toString().substring(0, 6) : "Web3User");
+        
+        let userName = urlParams.get("name") || (publicKey ? publicKey.toString().substring(0, 6) : "Web3User");
+        const isHost = urlParams.get("ishost") === "true";
+        
+        if (isHost) {
+          userName = `${userName} (Host)`;
+        }
 
         const response = await fetch(
           `/api/get-token?room=${roomName}&username=${userName}`
@@ -69,6 +75,18 @@ export default function RoomPage() {
   return (
     <main data-lk-theme="default" className="w-full h-[100dvh] bg-black relative overflow-hidden">
       
+      <style dangerouslySetInnerHTML={{__html: `
+        .lk-participant-name {
+          background-color: #2563eb !important;
+          color: #ffffff !important;
+          padding: 6px 12px !important;
+          border-radius: 8px !important;
+          font-weight: bold !important;
+          box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2) !important;
+          border: 1px solid #3b82f6 !important;
+        }
+      `}} />
+
       <div className="absolute top-4 left-4 z-[999] flex items-center gap-2 bg-black/60 backdrop-blur-md px-3 py-2 rounded-lg border border-gray-700">
         <span className="text-gray-300 text-xs sm:text-sm font-semibold mr-2">{roomId}</span>
         <button onClick={copyInviteLink} className={`px-4 py-1 text-xs sm:text-sm font-bold rounded-md transition-colors ${copied ? "bg-green-500 text-white" : "bg-blue-600 hover:bg-blue-700 text-white"}`}>
