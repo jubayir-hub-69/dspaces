@@ -4,6 +4,8 @@ import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
+
+// CSS for Wallet Adapter to ensure dropdown works perfectly
 import "@solana/wallet-adapter-react-ui/styles.css";
 
 const WalletMultiButton = dynamic(
@@ -25,6 +27,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [statusMsg, setStatusMsg] = useState("");
   
+  // Theme State
   const [isDark, setIsDark] = useState(true);
 
   useEffect(() => {
@@ -86,7 +89,7 @@ export default function Home() {
     let finalId = roomId.trim();
     if (!finalId) return alert("Please enter a Room ID or Link to join.");
 
-    // Smart URL Parsing
+    // Smart URL Parsing (Handles full links)
     if (finalId.includes("http") || finalId.includes("?")) {
       try {
         const urlObj = new URL(finalId.startsWith("http") ? finalId : `https://dummy.com/${finalId}`);
@@ -96,6 +99,13 @@ export default function Home() {
         if (finalId.includes("room=")) finalId = finalId.split("room=")[1].split("&")[0];
         else if (finalId.includes("id=")) finalId = finalId.split("id=")[1].split("&")[0];
       }
+    }
+
+    // Strict Frontend Validation: Must match "dSpaces-XXXX"
+    const isValidFormat = /^dSpaces-\d{4}$/.test(finalId);
+    if (!isValidFormat) {
+      alert("Invalid Room ID! Please enter a valid code (e.g., dSpaces-1234).");
+      return;
     }
 
     const finalName = userName.trim() || "User";
