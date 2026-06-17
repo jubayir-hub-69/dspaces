@@ -6,7 +6,7 @@ import { useEffect, useState, memo } from "react";
 import { useRouter } from "next/navigation";
 import { useWallet } from "@solana/wallet-adapter-react";
 
-// 🚀 Isolated Banner Component: Prevents the main LiveKitRoom from glitching on re-renders
+// 🚀 Isolated Banner Component
 function InviteBanner({ roomId }: { roomId: string }) {
   const [copied, setCopied] = useState(false);
 
@@ -145,7 +145,6 @@ export default function RoomPage() {
         }
       `}} />
 
-      {/* Floating Room ID Banner */}
       <MemoizedInviteBanner roomId={roomId} />
 
       <LiveKitRoom
@@ -154,7 +153,6 @@ export default function RoomPage() {
         token={token}
         serverUrl={serverUrl}
         connect={true}
-        disconnectOnUnmount={true}
         onDisconnected={() => router.push('/')}
         style={{ height: '100%', width: '100%' }}
       >
