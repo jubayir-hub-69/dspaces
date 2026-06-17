@@ -51,32 +51,34 @@ export default function RoomPage() {
 
   if (!connected) {
     return (
-      <main className="flex flex-col items-center justify-center min-h-[100dvh] bg-gray-950 text-white p-6 text-center">
+      <div className="flex flex-col items-center justify-center min-h-[100dvh] bg-gray-950 text-white p-6 text-center">
         <h2 className="text-red-500 font-bold text-3xl mb-4">Access Denied!</h2>
         <button onClick={() => router.push('/')} className="px-8 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg font-bold">Go Back</button>
-      </main>
+      </div>
     );
   }
 
   if (token === "" || serverUrl === "") {
     return (
-      <main className="flex items-center justify-center min-h-[100dvh] bg-black text-white text-lg">
+      <div className="flex items-center justify-center min-h-[100dvh] bg-black text-white text-lg">
         Connecting to secure room...
-      </main>
+      </div>
     );
   }
 
   return (
-    <main className="fixed inset-0 bg-black w-full h-full overflow-hidden">
+    <main style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, overflow: 'hidden', backgroundColor: 'black' }}>
       
-      <div className="absolute top-4 left-4 z-[999] flex items-center gap-2 bg-black/60 backdrop-blur-md px-3 py-2 rounded-lg border border-gray-700">
+      {/* Floating Header Bar */}
+      <div className="absolute top-4 left-4 z-[9999] flex items-center gap-2 bg-black/60 backdrop-blur-md px-3 py-2 rounded-lg border border-gray-700">
         <span className="text-gray-300 text-xs sm:text-sm font-semibold mr-2">{roomId}</span>
         <button onClick={copyInviteLink} className={`px-4 py-1 text-xs sm:text-sm font-bold rounded-md transition-colors ${copied ? "bg-green-500 text-white" : "bg-blue-600 hover:bg-blue-700 text-white"}`}>
           {copied ? "Copied!" : "Copy Link"}
         </button>
       </div>
 
-      <div className="w-full h-full">
+      {/* Bulletproof Video Container */}
+      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, overflow: 'hidden' }}>
         <LiveKitRoom
           video={true}
           audio={true}
