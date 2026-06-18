@@ -13,7 +13,7 @@ const WalletMultiButton = dynamic(
 
 export default function Home() {
   const router = useRouter();
-  const { connected, publicKey } = useWallet();
+  const { connected, publicKey, disconnect } = useWallet();
 
   const [roomId, setRoomId] = useState("");
   const [userName, setUserName] = useState("");
@@ -24,10 +24,15 @@ export default function Home() {
   const [loggedInEmail, setLoggedInEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [statusMsg, setStatusMsg] = useState("");
-  
   const [isDark, setIsDark] = useState(true);
 
-  // Strict check: Wallet is ONLY connected if it is unlocked and has a public key
+  // Strict Wallet Verification: Force disconnect if wallet is locked (no publicKey)
+  useEffect(() => {
+    if (connected && !publicKey) {
+      disconnect();
+    }
+  }, [connected, publicKey, disconnect]);
+
   const isWalletConnected = connected && publicKey !== null;
   const isAuthenticated = isWalletConnected || emailAuthenticated;
 
@@ -137,7 +142,6 @@ export default function Home() {
             {isDark ? <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4.22 4.22a1 1 0 011.415 0l.708.708a1 1 0 01-1.414 1.414l-.708-.708a1 1 0 010-1.414zM18 10a1 1 0 01-1 1h-1a1 1 0 110-2h1a1 1 0 011 1zM15.657 14.243a1 1 0 010 1.415l-.708.708a1 1 0 01-1.414-1.414l.708-.708a1 1 0 011.414 0zM10 18a1 1 0 01-1-1v-1a1 1 0 112 0v1a1 1 0 01-1 1zm-4.22-4.22a1 1 0 01-1.415 0l-.708-.708a1 1 0 011.414-1.414l.708.708a1 1 0 010 1.414zM2 10a1 1 0 011-1h1a1 1 0 110 2H3a1 1 0 01-1-1zm2.343-4.243a1 1 0 010-1.415l.708-.708a1 1 0 011.414 1.414l-.708.708a1 1 0 01-1.414 0zM10 5a5 5 0 100 10 5 5 0 000-10z"></path></svg> : <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"></path></svg>}
           </button>
           
-          {/* Wallet Button always visible for connect/disconnect control */}
           <div className="hover:scale-105 transition-transform">
             <WalletMultiButton className="!bg-indigo-600 hover:!bg-indigo-700 !h-10 !px-6 !rounded-xl !font-bold !shadow-lg !shadow-indigo-500/20" />
           </div>
@@ -168,7 +172,6 @@ export default function Home() {
         <div className={`w-full max-w-3xl p-6 sm:p-8 rounded-3xl transition-all duration-500 shadow-2xl backdrop-blur-xl border ${isDark ? 'bg-gray-900/60 border-white/5 shadow-black/50' : 'bg-white/80 border-gray-200 shadow-gray-200/50'}`}>
           {!isAuthenticated ? (
             <div className="flex flex-col sm:flex-row gap-6">
-              {/* Option 1: Wallet Info Box */}
               <div className={`flex-1 text-left p-6 rounded-2xl border transition-colors ${isDark ? 'bg-gray-900/40 border-gray-800' : 'bg-gray-50 border-gray-200'}`}>
                 <label className={`flex items-center gap-2 text-xs font-bold uppercase tracking-widest mb-4 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}><span className="w-2 h-2 rounded-full bg-indigo-500"></span>Option 1: Web3 Wallet</label>
                 <p className={`text-sm mb-4 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Click the "Select Wallet" button at the top right to connect securely. Ensure your wallet extension is unlocked.</p>
@@ -177,7 +180,6 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Option 2: Email Box */}
               <div className={`flex-1 text-left p-6 rounded-2xl border transition-colors ${isDark ? 'bg-gray-900/40 border-gray-800 hover:border-blue-500/50' : 'bg-gray-50 border-gray-200 hover:border-blue-400'}`}>
                 <label className={`flex items-center gap-2 text-xs font-bold uppercase tracking-widest mb-4 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}><span className="w-2 h-2 rounded-full bg-blue-500"></span>Option 2: Email Login</label>
                 <div className="flex flex-col gap-4">
@@ -204,16 +206,12 @@ export default function Home() {
                 <p className={`text-sm mt-2 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Set your Display Name first, then choose to create or join a meeting.</p>
               </div>
 
-              {/* Master Name Input */}
               <div className="text-left bg-blue-500/5 p-6 rounded-2xl border border-blue-500/20">
                 <label className={`text-xs font-bold uppercase tracking-widest ml-1 ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>Your Display Name</label>
                 <input type="text" placeholder="e.g. John Doe" value={userName} onChange={(e) => setUserName(e.target.value)} className={`w-full px-5 py-4 text-lg rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 mt-2 transition-all ${isDark ? 'bg-gray-900 border border-gray-700 text-white placeholder:text-gray-600' : 'bg-white border border-gray-300 text-gray-900 placeholder:text-gray-400'}`}/>
               </div>
 
-              {/* Split Actions */}
               <div className="flex flex-col sm:flex-row gap-6 mt-2">
-                
-                {/* Create Section */}
                 <div className={`flex-1 text-left p-6 rounded-2xl border flex flex-col justify-between ${isDark ? 'bg-gray-900/40 border-gray-800' : 'bg-gray-50 border-gray-200'}`}>
                   <div>
                     <h3 className="text-xl font-bold mb-2">Start a Meeting</h3>
@@ -224,7 +222,6 @@ export default function Home() {
                   </button>
                 </div>
 
-                {/* Join Section */}
                 <div className={`flex-1 text-left p-6 rounded-2xl border flex flex-col justify-between ${isDark ? 'bg-gray-900/40 border-gray-800' : 'bg-gray-50 border-gray-200'}`}>
                    <div>
                     <h3 className="text-xl font-bold mb-2">Join a Meeting</h3>
@@ -235,7 +232,6 @@ export default function Home() {
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"></path></svg>Join Existing Room
                   </button>
                 </div>
-
               </div>
             </div>
           )}
