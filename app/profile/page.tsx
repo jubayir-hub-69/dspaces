@@ -20,7 +20,20 @@ export default function ProfilePage() {
   const [history, setHistory] = useState<any[]>([]);
   const [isEditing, setIsEditing] = useState(false);
 
+  const [toastMsg, setToastMsg] = useState("");
+  
+  const [linkingEmail, setLinkingEmail] = useState(false);
+  const [linkEmailInput, setLinkEmailInput] = useState("");
+  const [linkOtpInput, setLinkOtpInput] = useState("");
+  const [linkOtpSent, setLinkOtpSent] = useState(false);
+  const [loading, setLoading] = useState(false);
+
   const avatars = ["👨‍🚀", "🥷", "🧙‍♂️", "👩‍🎤", "🤖", "👻", "🦊", "🐼"];
+
+  const showToast = (msg: string) => {
+    setToastMsg(msg);
+    setTimeout(() => setToastMsg(""), 4000);
+  };
 
   useEffect(() => {
     const savedEmail = localStorage.getItem("dspaces_email") || "";
@@ -48,20 +61,95 @@ export default function ProfilePage() {
     }
   }, [connected, router]);
 
+  useEffect(() => {
+    if (connected && publicKey) {
+      const usedWallets = JSON.parse(localStorage.getItem("dspaces_used_wallets") || "[]");
+      const currentWallet = publicKey.toString();
+      
+      if (usedWallets.includes(currentWallet) && localStorage.getItem("dspaces_linked_wallet") !== currentWallet) {
+        showToast("This Wallet is already used by another account!");
+        disconnect();
+      } else {
+        localStorage.setItem("dspaces_linked_wallet", currentWallet);
+        if (!usedWallets.includes(currentWallet)) {
+          usedWallets.push(currentWallet);
+          localStorage.setItem("dspaces_used_wallets", JSON.stringify(usedWallets));
+        }
+      }
+    }
+  }, [connected, publicKey, disconnect]);
+
   const saveProfile = () => {
     localStorage.setItem("dspaces_username", userName);
     localStorage.setItem("dspaces_avatar", avatar);
     setIsEditing(false);
+    showToast("Profile Updated Successfully!");
   };
 
   const handleLogout = () => {
     localStorage.removeItem("dspaces_email");
+    localStorage.removeItem("dspaces_linked_wallet");
     if (connected) disconnect();
     router.push("/");
   };
 
+  const handleSendLinkOTP = async () => {
+    if (!linkEmailInput.trim()) return showToast("Please enter an email address.");
+    
+    const usedEmails = JSON.parse(localStorage.getItem("dspaces_used_emails") || "[]");
+    if (usedEmails.includes(linkEmailInput.trim())) {
+      return showToast("This email is already used by another account!");
+    }
+
+    setLoading(true);
+    try {
+      const res = await fetch("/api/send-otp", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: linkEmailInput.trim() }),
+      });
+      const data = await res.json();
+      if (data.success) { 
+        setLinkOtpSent(true); 
+        showToast("OTP sent to email!"); 
+      } else {
+        showToast(data.error || "Failed to send OTP.");
+      }
+    } catch (err) { showToast("Error sending OTP."); } 
+    finally { setLoading(false); }
+  };
+
+  const handleVerifyLinkOTP = async () => {
+    if (!linkOtpInput.trim()) return showToast("Please enter the OTP.");
+    setLoading(true);
+    try {
+      const res = await fetch("/api/verify-otp", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ otp: linkOtpInput.trim() }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        const verifiedEmail = data.email;
+        setEmail(verifiedEmail);
+        localStorage.setItem("dspaces_email", verifiedEmail);
+        
+        const usedEmails = JSON.parse(localStorage.getItem("dspaces_used_emails") || "[]");
+        usedEmails.push(verifiedEmail);
+        localStorage.setItem("dspaces_used_emails", JSON.stringify(usedEmails));
+
+        setLinkingEmail(false);
+        showToast("Email successfully linked!");
+      } else { showToast(data.error || "Invalid OTP."); }
+    } catch (err) { showToast("Verification error."); } 
+    finally { setLoading(false); }
+  };
+
   return (
     <main className="min-h-screen bg-[#0f0f0f] text-white font-sans relative overflow-hidden">
+      
+      {toastMsg && (
+        <div className="absolute top-6 left-1/2 -translate-x-1/2 z-[1000] bg-blue-600/90 backdrop-blur-md text-white px-6 py-3 rounded-xl shadow-2xl font-semibold text-sm animate-fade-in-up border border-blue-400">
+          {toastMsg}
+        </div>
+      )}
+
       <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-blue-600/10 blur-[120px] rounded-full pointer-events-none"></div>
       
       <nav className="relative z-10 flex justify-between items-center px-6 py-5 border-b border-gray-800 bg-black/40 backdrop-blur-md">
@@ -115,15 +203,35 @@ export default function ProfilePage() {
             <h3 className="text-sm font-bold uppercase tracking-widest text-gray-500 mb-4">Linked Accounts</h3>
             
             <div className="flex flex-col gap-4">
-              <div className="flex items-center justify-between p-3 bg-black rounded-xl border border-gray-800">
-                <div className="flex items-center gap-3">
-                  <div className="bg-blue-500/20 p-2 rounded-lg text-blue-500">📧</div>
-                  <div className="flex flex-col">
-                    <span className="text-xs text-gray-400">Email</span>
-                    <span className="text-sm font-semibold truncate max-w-[120px]">{email ? email : "Not Linked"}</span>
+              <div className="flex flex-col bg-black rounded-xl border border-gray-800 overflow-hidden">
+                <div className="flex items-center justify-between p-3">
+                  <div className="flex items-center gap-3">
+                    <div className="bg-blue-500/20 p-2 rounded-lg text-blue-500">📧</div>
+                    <div className="flex flex-col">
+                      <span className="text-xs text-gray-400">Email</span>
+                      <span className="text-sm font-semibold truncate max-w-[120px]">{email ? email : "Not Linked"}</span>
+                    </div>
                   </div>
+                  {email ? <span className="text-green-500 text-xs font-bold">✔ Linked</span> : (
+                    <button onClick={() => setLinkingEmail(!linkingEmail)} className="text-xs bg-blue-600 hover:bg-blue-500 px-3 py-1.5 rounded-lg font-bold">Link</button>
+                  )}
                 </div>
-                {email ? <span className="text-green-500 text-xs font-bold">✔ Linked</span> : <span className="text-gray-500 text-xs">Unlinked</span>}
+                
+                {linkingEmail && !email && (
+                  <div className="p-3 bg-gray-900 border-t border-gray-800 flex flex-col gap-2">
+                    {!linkOtpSent ? (
+                      <>
+                        <input type="email" placeholder="Enter email" value={linkEmailInput} onChange={(e)=>setLinkEmailInput(e.target.value)} className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-xs outline-none" />
+                        <button onClick={handleSendLinkOTP} disabled={loading} className="w-full bg-blue-600 text-xs py-2 rounded-lg font-bold">{loading ? "Wait..." : "Send OTP"}</button>
+                      </>
+                    ) : (
+                      <>
+                        <input type="text" placeholder="Enter 6-digit OTP" value={linkOtpInput} onChange={(e)=>setLinkOtpInput(e.target.value)} className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-xs outline-none text-center tracking-widest" />
+                        <button onClick={handleVerifyLinkOTP} disabled={loading} className="w-full bg-green-600 text-xs py-2 rounded-lg font-bold">{loading ? "Verifying..." : "Verify & Link"}</button>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center justify-between p-3 bg-black rounded-xl border border-gray-800">
