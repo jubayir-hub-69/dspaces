@@ -33,9 +33,19 @@ export default function Home() {
     setTimeout(() => setToastMsg(""), 3500);
   };
 
+  // Global Wallet Registry Check
   useEffect(() => {
     if (connected && !publicKey) {
       disconnect();
+    } else if (connected && publicKey) {
+      const currentWallet = publicKey.toString();
+      const usedWallets = JSON.parse(localStorage.getItem("dspaces_used_wallets") || "[]");
+      
+      if (!usedWallets.includes(currentWallet)) {
+        usedWallets.push(currentWallet);
+        localStorage.setItem("dspaces_used_wallets", JSON.stringify(usedWallets));
+      }
+      localStorage.setItem("dspaces_linked_wallet", currentWallet);
     }
   }, [connected, publicKey, disconnect]);
 
@@ -88,12 +98,20 @@ export default function Home() {
       });
       const data = await res.json();
       if (data.success) {
+        const verifiedEmail = data.email;
         setEmailAuthenticated(true);
-        setLoggedInEmail(data.email);
-        localStorage.setItem("dspaces_email", data.email);
+        setLoggedInEmail(verifiedEmail);
+        localStorage.setItem("dspaces_email", verifiedEmail);
         
+        // Global Email Registry
+        const usedEmails = JSON.parse(localStorage.getItem("dspaces_used_emails") || "[]");
+        if (!usedEmails.includes(verifiedEmail)) {
+           usedEmails.push(verifiedEmail);
+           localStorage.setItem("dspaces_used_emails", JSON.stringify(usedEmails));
+        }
+
         const savedName = localStorage.getItem("dspaces_username");
-        setUserName(savedName || data.email.split("@")[0]);
+        setUserName(savedName || verifiedEmail.split("@")[0]);
         setStatusMsg("");
       } else { setStatusMsg(data.error || "Invalid OTP."); }
     } catch (err) { setStatusMsg("Verification error."); } 
@@ -135,6 +153,14 @@ export default function Home() {
     router.push(`/room?id=${finalId}&name=${finalName}`);
   };
 
+  const handleLogoutEmail = () => {
+    localStorage.removeItem("dspaces_email");
+    localStorage.removeItem("dspaces_linked_wallet");
+    setEmailAuthenticated(false);
+    setLoggedInEmail("");
+    setEmail(""); setOtp(""); setOtpSent(false); setStatusMsg("");
+  };
+
   return (
     <main className={`min-h-screen transition-colors duration-500 relative overflow-hidden font-sans ${isDark ? 'bg-[#030712] text-white' : 'bg-gray-50 text-gray-900'}`}>
       
@@ -162,9 +188,24 @@ export default function Home() {
             </button>
           )}
 
-          <div className="hover:scale-105 transition-transform hidden sm:block">
-            <WalletMultiButton className="!bg-indigo-600 hover:!bg-indigo-700 !h-10 !px-6 !rounded-xl !font-bold !shadow-lg !shadow-indigo-500/20" />
-          </div>
+          {!emailAuthenticated && (
+            <div className="hover:scale-105 transition-transform hidden sm:block">
+              <WalletMultiButton className="!bg-indigo-600 hover:!bg-indigo-700 !h-10 !px-6 !rounded-xl !font-bold !shadow-lg !shadow-indigo-500/20" />
+            </div>
+          )}
+
+          {emailAuthenticated && (
+            <div className={`flex items-center gap-3 border rounded-xl p-1.5 pl-4 shadow-lg ${isDark ? 'bg-gray-900/80 border-gray-700/50' : 'bg-white border-gray-200'} hidden sm:flex`}>
+              <div className="flex items-center gap-2 max-w-[120px] sm:max-w-xs">
+                <span className="relative flex h-2.5 w-2.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500"></span>
+                </span>
+                <span className={`text-sm font-semibold truncate ${isDark ? 'text-gray-200' : 'text-gray-800'}`}>{loggedInEmail}</span>
+              </div>
+              <button onClick={handleLogoutEmail} className="bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white px-4 py-2 rounded-lg text-xs font-bold transition-all duration-300">Logout</button>
+            </div>
+          )}
 
           {isAuthenticated && (
              <button onClick={() => router.push('/profile')} className="p-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white sm:hidden shadow-lg shadow-blue-500/20">
