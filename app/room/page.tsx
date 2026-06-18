@@ -40,7 +40,7 @@ function InviteBanner({ roomId }: { roomId: string }) {
           ) : (
             <>
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
-              <span className="hidden sm:block">Copy meeting link</span>
+              <span className="hidden sm:block">Copy link</span>
               <span className="block sm:hidden">Copy</span>
             </>
           )}
@@ -138,26 +138,32 @@ export default function RoomPage() {
   return (
     <main data-lk-theme="default" className="w-full h-screen bg-[#0f0f0f] relative overflow-hidden pointer-events-none">
       <style dangerouslySetInnerHTML={{__html: `
-        /* Advanced CSS for dMeet layout & fixing screen share ratio */
-        .lk-participant-name {
-          background-color: rgba(0, 0, 0, 0.7) !important;
-          color: #ffffff !important;
-          padding: 4px 8px !important;
-          border-radius: 6px !important;
-          font-size: 12px !important;
-          backdrop-filter: blur(5px) !important;
+        /* Clean Grid Layout specific fixes */
+        .lk-grid-layout {
+           gap: 12px !important;
+           padding: 12px !important;
+           margin-top: 60px !important; /* Space for top banner */
         }
         
-        /* Forces videos to fit completely inside the box without zooming/cropping */
-        .lk-video-container video {
-          object-fit: contain !important;
+        .lk-participant-tile video {
+           border-radius: 12px !important;
+           object-fit: cover !important;
         }
-        
-        /* Specific strict fix for screen share source */
+
+        /* Prevent screen share from overflowing */
         .lk-participant-tile[data-lk-source="screen_share"] video {
           object-fit: contain !important;
           background-color: #000 !important;
-          border-radius: 8px !important;
+        }
+
+        .lk-participant-name {
+          background-color: rgba(0, 0, 0, 0.7) !important;
+          color: #ffffff !important;
+          padding: 6px 10px !important;
+          border-radius: 6px !important;
+          font-size: 13px !important;
+          font-weight: bold !important;
+          backdrop-filter: blur(5px) !important;
         }
       `}} />
 
