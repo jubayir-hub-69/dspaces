@@ -19,11 +19,11 @@ function InviteBanner({ roomId }: { roomId: string }) {
 
   return (
     <>
-      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[999] bg-[#1a1a1a]/90 border border-gray-700 px-6 py-2 rounded-xl text-sm text-gray-200 font-bold backdrop-blur-md shadow-lg flex items-center gap-2">
+      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[999] bg-[#1a1a1a]/90 border border-gray-700 px-6 py-2 rounded-xl text-sm text-gray-200 font-bold backdrop-blur-md shadow-lg flex items-center gap-2 pointer-events-auto">
          <span className="text-gray-400 text-[10px] uppercase tracking-wider font-normal">Room ID:</span> {roomId}
       </div>
 
-      <div className="absolute top-4 right-4 sm:right-8 z-[999]">
+      <div className="absolute top-4 right-4 sm:right-8 z-[999] pointer-events-auto">
         <button
           onClick={copyInviteLink}
           className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all border shadow-lg ${
@@ -63,13 +63,15 @@ export default function RoomPage() {
 
   useEffect(() => {
     const savedEmail = localStorage.getItem("dspaces_email");
-    if (connected || savedEmail) {
+    const isWalletConnected = connected && publicKey !== null;
+    
+    if (isWalletConnected || savedEmail) {
       setAccessAllowed(true);
     } else {
       setAccessAllowed(false);
     }
     setCheckingAuth(false);
-  }, [connected]);
+  }, [connected, publicKey]);
 
   useEffect(() => {
     if (!accessAllowed) return;
@@ -134,7 +136,7 @@ export default function RoomPage() {
   }
 
   return (
-    <main data-lk-theme="default" className="w-full h-screen bg-[#0f0f0f] relative overflow-hidden flex flex-col">
+    <main data-lk-theme="default" className="w-full h-screen bg-[#0f0f0f] relative overflow-hidden pointer-events-none">
       <style dangerouslySetInnerHTML={{__html: `
         .lk-participant-name {
           background-color: rgba(0, 0, 0, 0.7) !important;
@@ -144,43 +146,14 @@ export default function RoomPage() {
           font-size: 12px !important;
           backdrop-filter: blur(5px) !important;
         }
-        .lk-focus-layout {
-          display: flex !important;
-          flex-direction: column-reverse !important;
-          height: 100% !important;
-          width: 100% !important;
-          gap: 10px;
-        }
-        .lk-carousel {
-          margin-top: 70px !important;
-          max-height: 15vh !important;
-        }
-        .lk-focused-room-screen {
-          flex-grow: 1 !important;
-          display: flex !important;
-          justify-content: center !important;
-          align-items: center !important;
-          padding: 10px !important;
-          width: 100% !important;
-        }
-        .lk-focused-room-screen video {
-          max-width: 100% !important;
-          max-height: 65vh !important;
+        .lk-participant-tile[data-lk-source="screen_share"] video {
           object-fit: contain !important;
-          border-radius: 12px !important;
-          background-color: #000 !important;
-          box-shadow: 0 10px 30px rgba(0,0,0,0.5) !important;
-        }
-        .lk-control-bar {
-          background-color: #000 !important;
-          border-top: 1px solid #222 !important;
-          padding: 12px !important;
         }
       `}} />
 
       <MemoizedInviteBanner roomId={roomId} />
 
-      <div className="flex-grow relative">
+      <div className="w-full h-full pointer-events-auto">
         <LiveKitRoom
           video={true}
           audio={true}
@@ -188,7 +161,7 @@ export default function RoomPage() {
           serverUrl={serverUrl}
           connect={true}
           onDisconnected={() => router.push('/')}
-          style={{ height: '100%', width: '100%', display: 'flex', flexDirection: 'column' }}
+          className="w-full h-full"
         >
           <VideoConference />
         </LiveKitRoom>
