@@ -11,21 +11,23 @@ const WalletMultiButton = dynamic(
   { ssr: false }
 );
 
+// Unified Database Helpers
+const getDb = () => JSON.parse(localStorage.getItem('dspaces_db') || '[]');
+const saveDb = (db: any[]) => localStorage.setItem('dspaces_db', JSON.stringify(db));
+
 export default function Home() {
   const router = useRouter();
   const { connected, publicKey, disconnect } = useWallet();
 
+  const [myAcc, setMyAcc] = useState<any>(null);
   const [roomId, setRoomId] = useState("");
   const [userName, setUserName] = useState("");
   const [email, setEmail] = useState("");
   const [otp, setOtp] = useState("");
   const [otpSent, setOtpSent] = useState(false);
-  const [emailAuthenticated, setEmailAuthenticated] = useState(false);
-  const [loggedInEmail, setLoggedInEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [statusMsg, setStatusMsg] = useState("");
   const [isDark, setIsDark] = useState(true);
-  
   const [toastMsg, setToastMsg] = useState("");
 
   const showToast = (msg: string) => {
@@ -33,45 +35,53 @@ export default function Home() {
     setTimeout(() => setToastMsg(""), 3500);
   };
 
-  // Global Wallet Registry Check
+  // 1. Check Active Session on Load
   useEffect(() => {
-    if (connected && !publicKey) {
-      disconnect();
-    } else if (connected && publicKey) {
-      const currentWallet = publicKey.toString();
-      const usedWallets = JSON.parse(localStorage.getItem("dspaces_used_wallets") || "[]");
-      
-      if (!usedWallets.includes(currentWallet)) {
-        usedWallets.push(currentWallet);
-        localStorage.setItem("dspaces_used_wallets", JSON.stringify(usedWallets));
+    const sessionId = localStorage.getItem("dspaces_active_session");
+    if (sessionId) {
+      const db = getDb();
+      const acc = db.find((a: any) => a.email === sessionId || a.wallet === sessionId);
+      if (acc) {
+        setMyAcc(acc);
+        setUserName(acc.name);
+      } else {
+        localStorage.removeItem("dspaces_active_session");
       }
-      localStorage.setItem("dspaces_linked_wallet", currentWallet);
     }
-  }, [connected, publicKey, disconnect]);
 
-  const isWalletConnected = connected && publicKey !== null;
-  const isAuthenticated = isWalletConnected || emailAuthenticated;
-
-  useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const joinId = urlParams.get("room") || urlParams.get("id");
-    
     if (joinId) {
       setRoomId(joinId);
       window.history.replaceState({}, document.title, window.location.pathname);
     }
-
-    const savedEmail = localStorage.getItem("dspaces_email");
-    if (savedEmail) {
-      setEmailAuthenticated(true);
-      setLoggedInEmail(savedEmail);
-    }
-
-    const savedName = localStorage.getItem("dspaces_username");
-    if (savedName) setUserName(savedName);
-    else if (savedEmail) setUserName(savedEmail.split("@")[0]);
-
   }, []);
+
+  // 2. Wallet Auto-Login Handler (Strictly checks DB)
+  useEffect(() => {
+    const sessionId = localStorage.getItem("dspaces_active_session");
+
+    if (connected && publicKey) {
+      const walletStr = publicKey.toString();
+      
+      if (!sessionId) {
+        // Logging in via Wallet
+        let db = getDb();
+        let acc = db.find((a: any) => a.wallet === walletStr);
+        if (!acc) {
+          acc = { email: null, wallet: walletStr, name: walletStr.substring(0, 6), avatar: '👨‍🚀' };
+          db.push(acc);
+          saveDb(db);
+        }
+        localStorage.setItem("dspaces_active_session", walletStr);
+        setMyAcc(acc);
+        setUserName(acc.name);
+      }
+    } else if (!connected && sessionId && myAcc && myAcc.wallet === sessionId) {
+      // Wallet was disconnected, log out
+      handleLogout();
+    }
+  }, [connected, publicKey]);
 
   const handleSendOTP = async () => {
     if (!email.trim()) return showToast("Please enter a valid email address.");
@@ -99,36 +109,50 @@ export default function Home() {
       const data = await res.json();
       if (data.success) {
         const verifiedEmail = data.email;
-        setEmailAuthenticated(true);
-        setLoggedInEmail(verifiedEmail);
-        localStorage.setItem("dspaces_email", verifiedEmail);
+        let db = getDb();
+        let acc = db.find((a: any) => a.email === verifiedEmail);
         
-        // Global Email Registry
-        const usedEmails = JSON.parse(localStorage.getItem("dspaces_used_emails") || "[]");
-        if (!usedEmails.includes(verifiedEmail)) {
-           usedEmails.push(verifiedEmail);
-           localStorage.setItem("dspaces_used_emails", JSON.stringify(usedEmails));
+        if (!acc) {
+          acc = { email: verifiedEmail, wallet: null, name: verifiedEmail.split("@")[0], avatar: '👨‍🚀' };
+          db.push(acc);
+          saveDb(db);
         }
 
-        const savedName = localStorage.getItem("dspaces_username");
-        setUserName(savedName || verifiedEmail.split("@")[0]);
+        localStorage.setItem("dspaces_active_session", verifiedEmail);
+        setMyAcc(acc);
+        setUserName(acc.name);
         setStatusMsg("");
       } else { setStatusMsg(data.error || "Invalid OTP."); }
     } catch (err) { setStatusMsg("Verification error."); } 
     finally { setLoading(false); }
   };
 
+  const handleLogout = () => {
+    localStorage.removeItem("dspaces_active_session");
+    setMyAcc(null);
+    setEmail(""); setOtp(""); setOtpSent(false); setStatusMsg("");
+    if (connected) disconnect();
+  };
+
   const handleCreateRoom = () => {
     if (!userName.trim()) return showToast("Please enter your Display Name first.");
-    localStorage.setItem("dspaces_username", userName.trim());
+    
+    // Update DB with new name
+    let db = getDb();
+    const updatedDb = db.map((a: any) => (a.email === myAcc.email && a.wallet === myAcc.wallet) ? { ...a, name: userName.trim() } : a);
+    saveDb(updatedDb);
+
     const randomCode = Math.floor(1000 + Math.random() * 9000);
-    const finalName = userName.trim();
-    router.push(`/room?id=dSpaces-${randomCode}&name=${finalName}&ishost=true`);
+    router.push(`/room?id=dSpaces-${randomCode}&name=${userName.trim()}&ishost=true`);
   };
 
   const handleJoinRoom = () => {
     if (!userName.trim()) return showToast("Please enter your Display Name first.");
-    localStorage.setItem("dspaces_username", userName.trim());
+    
+    let db = getDb();
+    const updatedDb = db.map((a: any) => (a.email === myAcc.email && a.wallet === myAcc.wallet) ? { ...a, name: userName.trim() } : a);
+    saveDb(updatedDb);
+
     let finalId = roomId.trim();
     if (!finalId) return showToast("Please enter a Room ID or Link to join.");
 
@@ -144,21 +168,9 @@ export default function Home() {
     }
 
     const isValidFormat = /^dSpaces-\d{4}$/.test(finalId);
-    if (!isValidFormat) {
-      showToast("Invalid Room ID! Please enter a valid code (e.g., dSpaces-1234).");
-      return;
-    }
+    if (!isValidFormat) return showToast("Invalid Room ID! Please enter a valid code (e.g., dSpaces-1234).");
 
-    const finalName = userName.trim();
-    router.push(`/room?id=${finalId}&name=${finalName}`);
-  };
-
-  const handleLogoutEmail = () => {
-    localStorage.removeItem("dspaces_email");
-    localStorage.removeItem("dspaces_linked_wallet");
-    setEmailAuthenticated(false);
-    setLoggedInEmail("");
-    setEmail(""); setOtp(""); setOtpSent(false); setStatusMsg("");
+    router.push(`/room?id=${finalId}&name=${userName.trim()}`);
   };
 
   return (
@@ -182,32 +194,32 @@ export default function Home() {
             {isDark ? <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4.22 4.22a1 1 0 011.415 0l.708.708a1 1 0 01-1.414 1.414l-.708-.708a1 1 0 010-1.414zM18 10a1 1 0 01-1 1h-1a1 1 0 110-2h1a1 1 0 011 1zM15.657 14.243a1 1 0 010 1.415l-.708.708a1 1 0 01-1.414-1.414l.708-.708a1 1 0 011.414 0zM10 18a1 1 0 01-1-1v-1a1 1 0 112 0v1a1 1 0 01-1 1zm-4.22-4.22a1 1 0 01-1.415 0l-.708-.708a1 1 0 011.414-1.414l.708.708a1 1 0 010 1.414zM2 10a1 1 0 011-1h1a1 1 0 110 2H3a1 1 0 01-1-1zm2.343-4.243a1 1 0 010-1.415l.708-.708a1 1 0 011.414 1.414l-.708.708a1 1 0 01-1.414 0zM10 5a5 5 0 100 10 5 5 0 000-10z"></path></svg> : <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"></path></svg>}
           </button>
           
-          {isAuthenticated && (
+          {myAcc && (
             <button onClick={() => router.push('/profile')} className="p-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm px-4 shadow-lg shadow-blue-500/20 transition-all hidden sm:block">
               My Profile
             </button>
           )}
 
-          {!emailAuthenticated && (
+          {!myAcc && (
             <div className="hover:scale-105 transition-transform hidden sm:block">
               <WalletMultiButton className="!bg-indigo-600 hover:!bg-indigo-700 !h-10 !px-6 !rounded-xl !font-bold !shadow-lg !shadow-indigo-500/20" />
             </div>
           )}
 
-          {emailAuthenticated && (
+          {myAcc && myAcc.email && (
             <div className={`flex items-center gap-3 border rounded-xl p-1.5 pl-4 shadow-lg ${isDark ? 'bg-gray-900/80 border-gray-700/50' : 'bg-white border-gray-200'} hidden sm:flex`}>
               <div className="flex items-center gap-2 max-w-[120px] sm:max-w-xs">
                 <span className="relative flex h-2.5 w-2.5">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
                   <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500"></span>
                 </span>
-                <span className={`text-sm font-semibold truncate ${isDark ? 'text-gray-200' : 'text-gray-800'}`}>{loggedInEmail}</span>
+                <span className={`text-sm font-semibold truncate ${isDark ? 'text-gray-200' : 'text-gray-800'}`}>{myAcc.email}</span>
               </div>
-              <button onClick={handleLogoutEmail} className="bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white px-4 py-2 rounded-lg text-xs font-bold transition-all duration-300">Logout</button>
+              <button onClick={handleLogout} className="bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white px-4 py-2 rounded-lg text-xs font-bold transition-all duration-300">Logout</button>
             </div>
           )}
 
-          {isAuthenticated && (
+          {myAcc && (
              <button onClick={() => router.push('/profile')} className="p-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white sm:hidden shadow-lg shadow-blue-500/20">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
              </button>
@@ -216,19 +228,18 @@ export default function Home() {
       </nav>
 
       <section className="relative z-10 flex flex-col items-center justify-center min-h-[80vh] px-4 py-12 text-center">
-        {!isAuthenticated && (
+        {!myAcc && (
           <div className="mb-8">
             <h1 className="text-4xl sm:text-6xl font-black mb-4 tracking-tight">The Future of <span className="bg-gradient-to-r from-blue-500 to-purple-500 bg-clip-text text-transparent">Web3 Meetings</span></h1>
-            <p className={`text-sm sm:text-base max-w-lg mx-auto ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Connect your Solana wallet (must be unlocked) or verify your email to access secure video conferencing.</p>
+            <p className={`text-sm sm:text-base max-w-lg mx-auto ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Connect your Solana wallet or verify your email to access secure video conferencing.</p>
           </div>
         )}
 
         <div className={`w-full max-w-3xl p-6 sm:p-8 rounded-3xl transition-all duration-500 shadow-2xl backdrop-blur-xl border ${isDark ? 'bg-gray-900/60 border-white/5 shadow-black/50' : 'bg-white/80 border-gray-200 shadow-gray-200/50'}`}>
-          {!isAuthenticated ? (
+          {!myAcc ? (
             <div className="flex flex-col sm:flex-row gap-6">
               <div className={`flex-1 text-left p-6 rounded-2xl border transition-colors ${isDark ? 'bg-gray-900/40 border-gray-800' : 'bg-gray-50 border-gray-200'}`}>
                 <label className={`flex items-center gap-2 text-xs font-bold uppercase tracking-widest mb-4 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}><span className="w-2 h-2 rounded-full bg-indigo-500"></span>Option 1: Web3 Wallet</label>
-                <p className={`text-sm mb-4 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Click the "Select Wallet" button at the top right to connect securely. Ensure your wallet extension is unlocked.</p>
                 <div className="flex justify-center w-full relative z-40 opacity-80 cursor-not-allowed">
                   <WalletMultiButton style={{ width: "100%", justifyContent: "center", backgroundColor: "#4f46e5", borderRadius: "12px", height: "48px", fontWeight: "bold" }} />
                 </div>
@@ -255,8 +266,8 @@ export default function Home() {
           ) : (
             <div className="flex flex-col gap-6">
               <div className="mb-2">
-                <h2 className="text-3xl font-black">Welcome to dSpaces!</h2>
-                <p className={`text-sm mt-2 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Set your Display Name first, then choose to create or join a meeting.</p>
+                <h2 className="text-3xl font-black">Welcome back, {myAcc.name}!</h2>
+                <p className={`text-sm mt-2 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Update your Display Name or jump right into a meeting.</p>
               </div>
 
               <div className="text-left bg-blue-500/5 p-6 rounded-2xl border border-blue-500/20">
