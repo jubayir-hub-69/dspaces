@@ -4,8 +4,6 @@ import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
-
-// CSS for Wallet Adapter to ensure dropdown works perfectly
 import "@solana/wallet-adapter-react-ui/styles.css";
 
 const WalletMultiButton = dynamic(
@@ -27,14 +25,16 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [statusMsg, setStatusMsg] = useState("");
   
-  // Theme State
   const [isDark, setIsDark] = useState(true);
 
   useEffect(() => {
-    // Read Room ID from URL if someone is redirected back
     const urlParams = new URLSearchParams(window.location.search);
     const joinId = urlParams.get("room") || urlParams.get("id");
-    if (joinId) setRoomId(joinId);
+    
+    if (joinId) {
+      setRoomId(joinId);
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
 
     const savedEmail = localStorage.getItem("dspaces_email");
     if (savedEmail) {
@@ -89,7 +89,6 @@ export default function Home() {
     let finalId = roomId.trim();
     if (!finalId) return alert("Please enter a Room ID or Link to join.");
 
-    // Smart URL Parsing (Handles full links)
     if (finalId.includes("http") || finalId.includes("?")) {
       try {
         const urlObj = new URL(finalId.startsWith("http") ? finalId : `https://dummy.com/${finalId}`);
@@ -101,7 +100,6 @@ export default function Home() {
       }
     }
 
-    // Strict Frontend Validation: Must match "dSpaces-XXXX"
     const isValidFormat = /^dSpaces-\d{4}$/.test(finalId);
     if (!isValidFormat) {
       alert("Invalid Room ID! Please enter a valid code (e.g., dSpaces-1234).");
@@ -119,7 +117,8 @@ export default function Home() {
     setEmail(""); setOtp(""); setOtpSent(false); setStatusMsg("");
   };
 
-  const isAuthenticated = connected || emailAuthenticated;
+  const isWalletConnected = connected && publicKey !== null;
+  const isAuthenticated = isWalletConnected || emailAuthenticated;
 
   return (
     <main className={`min-h-screen transition-colors duration-500 relative overflow-hidden font-sans ${isDark ? 'bg-[#030712] text-white' : 'bg-gray-50 text-gray-900'}`}>
@@ -134,7 +133,7 @@ export default function Home() {
           <button onClick={() => setIsDark(!isDark)} className={`p-2 rounded-full transition-colors ${isDark ? 'bg-gray-800 text-yellow-400 hover:bg-gray-700' : 'bg-gray-200 text-gray-800 hover:bg-gray-300'}`}>
             {isDark ? <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4.22 4.22a1 1 0 011.415 0l.708.708a1 1 0 01-1.414 1.414l-.708-.708a1 1 0 010-1.414zM18 10a1 1 0 01-1 1h-1a1 1 0 110-2h1a1 1 0 011 1zM15.657 14.243a1 1 0 010 1.415l-.708.708a1 1 0 01-1.414-1.414l.708-.708a1 1 0 011.414 0zM10 18a1 1 0 01-1-1v-1a1 1 0 112 0v1a1 1 0 01-1 1zm-4.22-4.22a1 1 0 01-1.415 0l-.708-.708a1 1 0 011.414-1.414l.708.708a1 1 0 010 1.414zM2 10a1 1 0 011-1h1a1 1 0 110 2H3a1 1 0 01-1-1zm2.343-4.243a1 1 0 010-1.415l.708-.708a1 1 0 011.414 1.414l-.708.708a1 1 0 01-1.414 0zM10 5a5 5 0 100 10 5 5 0 000-10z"></path></svg> : <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"></path></svg>}
           </button>
-          {!isAuthenticated ? <div className={`hidden sm:block px-4 py-1.5 rounded-full border text-xs font-semibold ${isDark ? 'border-gray-800 bg-gray-900/50 text-gray-400' : 'border-gray-300 bg-gray-100 text-gray-600'}`}>Not Connected</div> : connected ? <div className="hover:scale-105 transition-transform"><WalletMultiButton className="!bg-indigo-600 hover:!bg-indigo-700 !h-10 !px-6 !rounded-xl !font-bold !shadow-lg !shadow-indigo-500/20" /></div> : <div className={`flex items-center gap-3 border rounded-xl p-1.5 pl-4 shadow-lg animate-fade-in-up ${isDark ? 'bg-gray-900/80 border-gray-700/50' : 'bg-white border-gray-200'}`}><div className="flex items-center gap-2 max-w-[120px] sm:max-w-xs"><span className="relative flex h-2.5 w-2.5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span><span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500"></span></span><span className={`text-sm font-semibold truncate ${isDark ? 'text-gray-200' : 'text-gray-800'}`}>{loggedInEmail}</span></div><button onClick={handleLogoutEmail} className="bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white px-4 py-2 rounded-lg text-xs font-bold transition-all duration-300">Logout</button></div>}
+          {!isAuthenticated ? <div className={`hidden sm:block px-4 py-1.5 rounded-full border text-xs font-semibold ${isDark ? 'border-gray-800 bg-gray-900/50 text-gray-400' : 'border-gray-300 bg-gray-100 text-gray-600'}`}>Not Connected</div> : isWalletConnected ? <div className="hover:scale-105 transition-transform"><WalletMultiButton className="!bg-indigo-600 hover:!bg-indigo-700 !h-10 !px-6 !rounded-xl !font-bold !shadow-lg !shadow-indigo-500/20" /></div> : <div className={`flex items-center gap-3 border rounded-xl p-1.5 pl-4 shadow-lg animate-fade-in-up ${isDark ? 'bg-gray-900/80 border-gray-700/50' : 'bg-white border-gray-200'}`}><div className="flex items-center gap-2 max-w-[120px] sm:max-w-xs"><span className="relative flex h-2.5 w-2.5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span><span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500"></span></span><span className={`text-sm font-semibold truncate ${isDark ? 'text-gray-200' : 'text-gray-800'}`}>{loggedInEmail}</span></div><button onClick={handleLogoutEmail} className="bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white px-4 py-2 rounded-lg text-xs font-bold transition-all duration-300">Logout</button></div>}
         </div>
       </nav>
 
