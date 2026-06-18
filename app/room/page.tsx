@@ -19,11 +19,11 @@ function InviteBanner({ roomId }: { roomId: string }) {
 
   return (
     <>
-      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[999] bg-[#1a1a1a]/90 border border-gray-700 px-6 py-2 rounded-xl text-sm text-gray-200 font-bold backdrop-blur-md shadow-lg flex items-center gap-2 pointer-events-auto">
+      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] bg-[#1a1a1a]/90 border border-gray-700 px-6 py-2 rounded-xl text-sm text-gray-200 font-bold backdrop-blur-md shadow-lg flex items-center gap-2">
          <span className="text-gray-400 text-[10px] uppercase tracking-wider font-normal">Room ID:</span> {roomId}
       </div>
 
-      <div className="absolute top-4 right-4 sm:right-8 z-[999] pointer-events-auto">
+      <div className="absolute top-4 right-4 sm:right-8 z-[1000]">
         <button
           onClick={copyInviteLink}
           className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all border shadow-lg ${
@@ -59,72 +59,48 @@ export default function RoomPage() {
   const [accessAllowed, setAccessAllowed] = useState(false);
   const [checkingAuth, setCheckingAuth] = useState(true);
   const router = useRouter();
-  const { connected, publicKey } = useWallet();
+  const { connected } = useWallet();
 
   useEffect(() => {
-    const savedEmail = localStorage.getItem("dspaces_email");
-    const isWalletConnected = connected && publicKey !== null;
-    
-    if (isWalletConnected || savedEmail) {
+    const sessionId = localStorage.getItem("dspaces_active_session");
+    if (!sessionId) {
+      setAccessAllowed(false);
+      setCheckingAuth(false);
+      return;
+    }
+
+    const db = JSON.parse(localStorage.getItem('dspaces_db') || '[]');
+    const acc = db.find((a: any) => a.email === sessionId || a.wallet === sessionId);
+
+    if (acc) {
       setAccessAllowed(true);
+      (async () => {
+        try {
+          const urlParams = new URLSearchParams(window.location.search);
+          const roomName = urlParams.get("id") || "dSpaces-Global";
+          setRoomId(roomName);
+          
+          let userName = urlParams.get("name") || acc.name;
+          if (urlParams.get("ishost") === "true") userName = `${userName} (Host)`;
+
+          const response = await fetch(`/api/get-token?room=${roomName}&username=${userName}`);
+          const data = await response.json();
+
+          if (data.token && data.wsUrl) {
+            setToken(data.token);
+            setServerUrl(data.wsUrl);
+          }
+        } catch (error) {
+          console.error("Token error:", error);
+        }
+      })();
     } else {
       setAccessAllowed(false);
     }
     setCheckingAuth(false);
-  }, [connected, publicKey]);
+  }, [connected]);
 
-  useEffect(() => {
-    if (!accessAllowed) return;
-
-    (async () => {
-      try {
-        const urlParams = new URLSearchParams(window.location.search);
-        const roomName = urlParams.get("id") || "dSpaces-Global";
-        setRoomId(roomName);
-        
-        const savedEmail = localStorage.getItem("dspaces_email");
-        const defaultUser = savedEmail ? savedEmail.split("@")[0] : (publicKey ? publicKey.toString().substring(0, 6) : "User");
-        let userName = urlParams.get("name") || defaultUser;
-        
-        if (urlParams.get("ishost") === "true") userName = `${userName} (Host)`;
-
-        const response = await fetch(`/api/get-token?room=${roomName}&username=${userName}`);
-        const data = await response.json();
-
-        if (data.token && data.wsUrl) {
-          setToken(data.token);
-          setServerUrl(data.wsUrl);
-        }
-      } catch (error) {
-        console.error("Token error:", error);
-      }
-    })();
-  }, [accessAllowed, connected, publicKey]);
-
-  if (checkingAuth) {
-    return (
-      <main className="flex items-center justify-center min-h-screen bg-[#0f0f0f] text-white">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-          <p className="text-gray-400 font-medium">Verifying access...</p>
-        </div>
-      </main>
-    );
-  }
-
-  if (!accessAllowed) {
-    return (
-      <main className="flex flex-col items-center justify-center min-h-screen bg-[#0f0f0f] text-white p-4 text-center">
-        <h1 className="text-4xl font-black text-red-500 mb-4">Access Denied!</h1>
-        <p className="text-gray-400 mb-8">You need to log in with Email or Wallet to join this room.</p>
-        <button onClick={() => router.push(`/?room=${roomId}`)} className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition-all shadow-lg hover:shadow-blue-500/30">
-          Go to Login Page
-        </button>
-      </main>
-    );
-  }
-
-  if (!token || !serverUrl) {
+  if (checkingAuth || !token || !serverUrl) {
     return (
       <main className="flex items-center justify-center min-h-screen bg-[#0f0f0f] text-white">
         <div className="flex flex-col items-center gap-4">
@@ -135,31 +111,22 @@ export default function RoomPage() {
     );
   }
 
+  if (!accessAllowed) {
+    return (
+      <main className="flex flex-col items-center justify-center min-h-screen bg-[#0f0f0f] text-white p-4 text-center">
+        <h1 className="text-4xl font-black text-red-500 mb-4">Access Denied!</h1>
+        <p className="text-gray-400 mb-8">You need to log in to join this room.</p>
+        <button onClick={() => router.push('/')} className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-lg">
+          Go to Login Page
+        </button>
+      </main>
+    );
+  }
+
   return (
-    <main data-lk-theme="default" className="w-screen h-screen bg-[#0f0f0f] relative overflow-hidden pointer-events-none">
+    <main data-lk-theme="default" className="w-screen h-screen bg-[#0f0f0f] relative overflow-hidden">
       <style dangerouslySetInnerHTML={{__html: `
-        .lk-video-conference {
-          height: 100vh !important;
-          width: 100vw !important;
-          max-height: 100vh !important;
-        }
-
-        .lk-grid-layout {
-           gap: 12px !important;
-           padding: 12px !important;
-           padding-top: 70px !important; 
-        }
-
-        .lk-participant-tile video {
-           border-radius: 12px !important;
-           object-fit: cover !important;
-        }
-
-        .lk-participant-tile[data-lk-source="screen_share"] video {
-          object-fit: contain !important;
-          background-color: #000 !important;
-        }
-
+        /* Strictly Cosmetic Styles Only - No Layout Hacks */
         .lk-participant-name {
           background-color: rgba(0, 0, 0, 0.7) !important;
           color: #ffffff !important;
@@ -169,29 +136,21 @@ export default function RoomPage() {
           font-weight: bold !important;
           backdrop-filter: blur(5px) !important;
         }
-
-        .lk-chat {
-          border-left: 1px solid #333 !important;
-          background-color: #111 !important;
-          box-shadow: -5px 0 20px rgba(0,0,0,0.5) !important;
-        }
       `}} />
 
       <MemoizedInviteBanner roomId={roomId} />
 
-      <div className="w-full h-full pointer-events-auto">
-        <LiveKitRoom
-          video={true}
-          audio={true}
-          token={token}
-          serverUrl={serverUrl}
-          connect={true}
-          onDisconnected={() => router.push('/')}
-          className="w-full h-full"
-        >
-          <VideoConference />
-        </LiveKitRoom>
-      </div>
+      <LiveKitRoom
+        video={true}
+        audio={true}
+        token={token}
+        serverUrl={serverUrl}
+        connect={true}
+        onDisconnected={() => router.push('/')}
+        className="w-full h-full"
+      >
+        <VideoConference />
+      </LiveKitRoom>
     </main>
   );
 }
