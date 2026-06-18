@@ -2,8 +2,8 @@
 
 import { useEffect, useState, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { LiveKitRoom, VideoConference, RoomAudioRenderer } from "@livekit/components-react";
-import "@livekit/components-styles";
+import { LiveKitRoom, VideoConference, RoomAudioRenderer } from "@dtelecom/components-react";
+import "@dtelecom/components-styles";
 
 export default function RoomPage() {
   const searchParams = useSearchParams();
