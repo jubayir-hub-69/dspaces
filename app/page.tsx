@@ -62,7 +62,6 @@ export default function Home() {
       const walletStr = publicKey.toString();
       
       if (!sessionId) {
-        // Save to Global DB instantly
         fetch('/api/global-db', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'ADD', type: 'wallet', value: walletStr })
@@ -111,7 +110,6 @@ export default function Home() {
       if (data.success) {
         const verifiedEmail = data.email;
         
-        // Save to Global DB instantly
         fetch('/api/global-db', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'ADD', type: 'email', value: verifiedEmail })
@@ -174,6 +172,10 @@ export default function Home() {
     router.push(`/room?id=${finalId}&name=${userName.trim()}`);
   };
 
+  const displayAccountInfo = myAcc?.email 
+    ? myAcc.email 
+    : (myAcc?.wallet ? `${myAcc.wallet.substring(0, 4)}...${myAcc.wallet.substring(myAcc.wallet.length - 4)}` : "");
+
   return (
     <main className={`min-h-screen transition-colors duration-500 relative overflow-hidden font-sans ${isDark ? 'bg-[#030712] text-white' : 'bg-gray-50 text-gray-900'}`}>
       
@@ -207,14 +209,16 @@ export default function Home() {
             </div>
           )}
 
-          {myAcc && myAcc.email && (
+          {myAcc && (
             <div className={`flex items-center gap-3 border rounded-xl p-1.5 pl-4 shadow-lg ${isDark ? 'bg-gray-900/80 border-gray-700/50' : 'bg-white border-gray-200'} hidden sm:flex`}>
               <div className="flex items-center gap-2 max-w-[120px] sm:max-w-xs">
                 <span className="relative flex h-2.5 w-2.5">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
                   <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500"></span>
                 </span>
-                <span className={`text-sm font-semibold truncate ${isDark ? 'text-gray-200' : 'text-gray-800'}`}>{myAcc.email}</span>
+                <span className={`text-sm font-semibold truncate ${isDark ? 'text-gray-200' : 'text-gray-800'}`}>
+                  {displayAccountInfo}
+                </span>
               </div>
               <button onClick={handleLogout} className="bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white px-4 py-2 rounded-lg text-xs font-bold transition-all duration-300">Logout</button>
             </div>
