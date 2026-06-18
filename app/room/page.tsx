@@ -138,6 +138,7 @@ export default function RoomPage() {
   return (
     <main data-lk-theme="default" className="w-full h-screen bg-[#0f0f0f] relative overflow-hidden pointer-events-none">
       <style dangerouslySetInnerHTML={{__html: `
+        /* Advanced CSS for dMeet layout & fixing screen share ratio */
         .lk-participant-name {
           background-color: rgba(0, 0, 0, 0.7) !important;
           color: #ffffff !important;
@@ -146,8 +147,17 @@ export default function RoomPage() {
           font-size: 12px !important;
           backdrop-filter: blur(5px) !important;
         }
+        
+        /* Forces videos to fit completely inside the box without zooming/cropping */
+        .lk-video-container video {
+          object-fit: contain !important;
+        }
+        
+        /* Specific strict fix for screen share source */
         .lk-participant-tile[data-lk-source="screen_share"] video {
           object-fit: contain !important;
+          background-color: #000 !important;
+          border-radius: 8px !important;
         }
       `}} />
 
