@@ -21,14 +21,11 @@ export default function ProfilePage() {
   const [isEditing, setIsEditing] = useState(false);
 
   const [toastMsg, setToastMsg] = useState("");
-  
   const [linkingEmail, setLinkingEmail] = useState(false);
   const [linkEmailInput, setLinkEmailInput] = useState("");
   const [linkOtpInput, setLinkOtpInput] = useState("");
   const [linkOtpSent, setLinkOtpSent] = useState(false);
   const [loading, setLoading] = useState(false);
-
-  const avatars = ["👨‍🚀", "🥷", "🧙‍♂️", "👩‍🎤", "🤖", "👻", "🦊", "🐼"];
 
   const showToast = (msg: string) => {
     setToastMsg(msg);
@@ -61,58 +58,46 @@ export default function ProfilePage() {
     }
   }, [connected, router]);
 
+  // Strict Account Linking Logic for Wallet
   useEffect(() => {
     if (connected && publicKey) {
-      const usedWallets = JSON.parse(localStorage.getItem("dspaces_used_wallets") || "[]");
       const currentWallet = publicKey.toString();
-      
-      if (usedWallets.includes(currentWallet) && localStorage.getItem("dspaces_linked_wallet") !== currentWallet) {
+      const usedWallets = JSON.parse(localStorage.getItem("dspaces_used_wallets") || "[]");
+      const linkedWallet = localStorage.getItem("dspaces_linked_wallet");
+
+      if (linkedWallet === currentWallet) return;
+
+      if (usedWallets.includes(currentWallet)) {
         showToast("This Wallet is already used by another account!");
-        disconnect();
+        disconnect(); 
       } else {
         localStorage.setItem("dspaces_linked_wallet", currentWallet);
-        if (!usedWallets.includes(currentWallet)) {
-          usedWallets.push(currentWallet);
-          localStorage.setItem("dspaces_used_wallets", JSON.stringify(usedWallets));
-        }
+        usedWallets.push(currentWallet);
+        localStorage.setItem("dspaces_used_wallets", JSON.stringify(usedWallets));
+        showToast("Wallet linked successfully!");
       }
     }
   }, [connected, publicKey, disconnect]);
 
-  const saveProfile = () => {
-    localStorage.setItem("dspaces_username", userName);
-    localStorage.setItem("dspaces_avatar", avatar);
-    setIsEditing(false);
-    showToast("Profile Updated Successfully!");
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem("dspaces_email");
-    localStorage.removeItem("dspaces_linked_wallet");
-    if (connected) disconnect();
-    router.push("/");
-  };
-
   const handleSendLinkOTP = async () => {
-    if (!linkEmailInput.trim()) return showToast("Please enter an email address.");
+    const emailInput = linkEmailInput.trim();
+    if (!emailInput) return showToast("Please enter an email address.");
     
     const usedEmails = JSON.parse(localStorage.getItem("dspaces_used_emails") || "[]");
-    if (usedEmails.includes(linkEmailInput.trim())) {
-      return showToast("This email is already used by another account!");
+    if (usedEmails.includes(emailInput)) {
+      return showToast("This Email is already used by another account!");
     }
 
     setLoading(true);
     try {
       const res = await fetch("/api/send-otp", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: linkEmailInput.trim() }),
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: emailInput }),
       });
       const data = await res.json();
       if (data.success) { 
         setLinkOtpSent(true); 
         showToast("OTP sent to email!"); 
-      } else {
-        showToast(data.error || "Failed to send OTP.");
-      }
+      } else { showToast(data.error || "Failed to send OTP."); }
     } catch (err) { showToast("Error sending OTP."); } 
     finally { setLoading(false); }
   };
@@ -141,6 +126,35 @@ export default function ProfilePage() {
     finally { setLoading(false); }
   };
 
+  // Profile Picture Upload Logic
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 2 * 1024 * 1024) { 
+        return showToast("Image size should be less than 2MB.");
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setAvatar(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const saveProfile = () => {
+    localStorage.setItem("dspaces_username", userName);
+    localStorage.setItem("dspaces_avatar", avatar);
+    setIsEditing(false);
+    showToast("Profile Updated Successfully!");
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem("dspaces_email");
+    localStorage.removeItem("dspaces_linked_wallet");
+    if (connected) disconnect();
+    router.push("/");
+  };
+
   return (
     <main className="min-h-screen bg-[#0f0f0f] text-white font-sans relative overflow-hidden">
       
@@ -165,8 +179,22 @@ export default function ProfilePage() {
         
         <div className="w-full md:w-1/3 flex flex-col gap-6">
           <div className="bg-[#1a1a1a] border border-gray-800 rounded-3xl p-6 flex flex-col items-center text-center shadow-2xl">
-            <div className="text-6xl bg-gray-800 w-24 h-24 flex items-center justify-center rounded-full mb-4 border-2 border-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.3)]">
-              {avatar}
+            
+            {/* Clickable Profile Picture */}
+            <div className="relative text-6xl bg-gray-800 w-24 h-24 flex items-center justify-center rounded-full mb-4 border-2 border-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.3)] overflow-hidden group">
+              {avatar.startsWith("data:image") ? (
+                <img src={avatar} alt="Profile" className="w-full h-full object-cover" />
+              ) : (
+                <span>{avatar}</span>
+              )}
+              
+              {isEditing && (
+                <label className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity">
+                  <svg className="w-6 h-6 text-white mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                  <span className="text-[9px] font-bold text-white uppercase tracking-wider">Upload</span>
+                  <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+                </label>
+              )}
             </div>
             
             {isEditing ? (
@@ -177,14 +205,7 @@ export default function ProfilePage() {
                   onChange={(e) => setUserName(e.target.value)} 
                   className="w-full bg-black border border-gray-700 rounded-xl px-4 py-2 text-center focus:border-blue-500 outline-none"
                 />
-                <div className="flex flex-wrap justify-center gap-2 my-2">
-                  {avatars.map((a) => (
-                    <button key={a} onClick={() => setAvatar(a)} className={`text-2xl p-1 rounded-lg ${avatar === a ? 'bg-blue-500/20 border border-blue-500' : 'hover:bg-gray-800'}`}>
-                      {a}
-                    </button>
-                  ))}
-                </div>
-                <button onClick={saveProfile} className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-2 rounded-xl">
+                <button onClick={saveProfile} className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-2 rounded-xl mt-2">
                   Save Profile
                 </button>
               </div>
