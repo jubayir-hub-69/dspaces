@@ -1,42 +1,31 @@
-import { AccessToken } from '@dtelecom/server-sdk-js';
-import { NextRequest, NextResponse } from 'next/server';
+import { AccessToken } from 'livekit-server-sdk';
+import { NextResponse } from 'next/server';
 
-export async function GET(req: NextRequest) {
-  const room = req.nextUrl.searchParams.get('room');
-  const username = req.nextUrl.searchParams.get('username');
+export async function POST(req: Request) {
+    try {
+        const body = await req.json();
+        const roomName = body.room || "dSpaces-Room";
+        const participantName = body.username || "Guest";
 
-  if (!room || !username) {
-    return NextResponse.json({ error: 'Missing room or username' }, { status: 400 });
-  }
+        const apiKey = process.env.LIVEKIT_API_KEY || process.env.DTELECOM_API_KEY;
+        const apiSecret = process.env.LIVEKIT_API_SECRET || process.env.DTELECOM_API_SECRET;
+        const wsUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL || process.env.NEXT_PUBLIC_DTELECOM_URL;
 
-  // 🔴 Strict Backend Security: Only allow correctly formatted rooms
-  const isValidRoom = /^dSpaces-\d{4}$/.test(room);
-  if (!isValidRoom) {
-    return NextResponse.json({ error: 'Invalid Room ID Format. Access Denied.' }, { status: 403 });
-  }
+        if (!apiKey || !apiSecret || !wsUrl) {
+            return NextResponse.json({ 
+                error: "Missing API Key or WebSocket URL in Vercel Environment Variables. Please check your Vercel settings." 
+            }, { status: 500 });
+        }
 
-  const apiKey = process.env.LIVEKIT_API_KEY!;
-  const apiSecret = process.env.LIVEKIT_API_SECRET!;
+        const at = new AccessToken(apiKey, apiSecret, {
+            identity: participantName,
+        });
 
-  try {
-    const uniqueId = `user_${Math.floor(Math.random() * 1000000)}`;
+        at.addGrant({ roomJoin: true, room: roomName });
+        const token = await at.toJwt();
 
-    const at = new AccessToken(apiKey, apiSecret, { 
-      identity: uniqueId, 
-      name: username 
-    });
-    
-    at.addGrant({ roomJoin: true, room: room, canPublish: true, canSubscribe: true });
-
-    const token = await at.toJwt();
-    
-    const clientIp = req.headers.get('x-forwarded-for') || '127.0.0.1';
-    
-    const wsUrl = await at.getWsUrl(clientIp);
-
-    return NextResponse.json({ token, wsUrl });
-  } catch (error) {
-    console.error("Token generation error:", error);
-    return NextResponse.json({ error: 'Failed to generate token' }, { status: 500 });
-  }
+        return NextResponse.json({ token, url: wsUrl });
+    } catch (error: any) {
+        return NextResponse.json({ error: error.message || "Failed to generate connection token" }, { status: 500 });
+    }
 }
