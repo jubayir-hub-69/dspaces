@@ -11,6 +11,7 @@
   "dependencies": {
     "@dtelecom/components-react": "^1.0.0",
     "@dtelecom/components-styles": "^1.0.0",
+    "@dtelecom/server-sdk-js": "^2.0.0",
     "@google/generative-ai": "^0.12.0",
     "@solana/wallet-adapter-base": "^0.9.23",
     "@solana/wallet-adapter-react": "^0.15.35",
@@ -20,6 +21,7 @@
     "livekit-client": "^2.1.2",
     "livekit-server-sdk": "^2.3.0",
     "next": "14.2.3",
+    "nodemailer": "^6.9.13",
     "react": "^18",
     "react-dom": "^18"
   },
