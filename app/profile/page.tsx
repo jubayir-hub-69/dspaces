@@ -37,7 +37,6 @@ export default function ProfilePage() {
     setTimeout(() => setToastMsg(""), 4000);
   };
 
-  // Load User Data strictly from active session
   useEffect(() => {
     const sessionId = localStorage.getItem("dspaces_active_session");
     if (!sessionId) {
@@ -60,22 +59,33 @@ export default function ProfilePage() {
     }
   }, [router]);
 
-  // Strict Wallet Linking Logic
+  // Strict Global Wallet Linking Check via Vercel DB
   useEffect(() => {
     if (connected && publicKey && myAcc && !myAcc.wallet) {
       const walletStr = publicKey.toString();
-      const db = getDb();
-      const existingWalletAcc = db.find((a: any) => a.wallet === walletStr);
+      
+      // Global Check
+      fetch('/api/global-db', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'CHECK', type: 'wallet', value: walletStr })
+      }).then(res => res.json()).then(data => {
+        if (data.isUsed) {
+          showToast("This Wallet is already used by another account!");
+          disconnect();
+        } else {
+          // It's safe! Link it.
+          fetch('/api/global-db', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'ADD', type: 'wallet', value: walletStr })
+          });
 
-      if (existingWalletAcc) {
-        showToast("This Wallet is already used by another account!");
-        disconnect(); 
-      } else {
-        const updatedDb = db.map((a: any) => (a.email === myAcc.email && a.wallet === myAcc.wallet) ? { ...a, wallet: walletStr } : a);
-        saveDb(updatedDb);
-        setMyAcc({ ...myAcc, wallet: walletStr });
-        showToast("Wallet linked successfully!");
-      }
+          const db = getDb();
+          const updatedDb = db.map((a: any) => (a.email === myAcc.email && a.wallet === myAcc.wallet) ? { ...a, wallet: walletStr } : a);
+          saveDb(updatedDb);
+          setMyAcc({ ...myAcc, wallet: walletStr });
+          showToast("Wallet linked successfully!");
+        }
+      });
     }
   }, [connected, publicKey, myAcc, disconnect]);
 
@@ -83,14 +93,20 @@ export default function ProfilePage() {
     const emailInput = linkEmailInput.trim();
     if (!emailInput) return showToast("Please enter an email address.");
     
-    const db = getDb();
-    const existingEmailAcc = db.find((a: any) => a.email === emailInput);
-    if (existingEmailAcc) {
-      return showToast("This Email is already used by another account!");
-    }
-
     setLoading(true);
     try {
+      // Global Email Check via Vercel DB
+      const dbRes = await fetch('/api/global-db', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'CHECK', type: 'email', value: emailInput })
+      });
+      const dbData = await dbRes.json();
+
+      if (dbData.isUsed) {
+        setLoading(false);
+        return showToast("This Email is already used by another account!");
+      }
+
       const res = await fetch("/api/send-otp", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: emailInput }),
       });
@@ -113,6 +129,13 @@ export default function ProfilePage() {
       const data = await res.json();
       if (data.success) {
         const verifiedEmail = data.email;
+        
+        // Add strictly to Global DB
+        fetch('/api/global-db', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'ADD', type: 'email', value: verifiedEmail })
+        });
+
         const db = getDb();
         const updatedDb = db.map((a: any) => (a.email === myAcc.email && a.wallet === myAcc.wallet) ? { ...a, email: verifiedEmail } : a);
         saveDb(updatedDb);
