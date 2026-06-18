@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { Suspense, useEffect, useState, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { LiveKitRoom, VideoConference, RoomAudioRenderer } from "@dtelecom/components-react";
 import "@dtelecom/components-styles";
 
-export default function RoomPage() {
+// 1. We moved the main logic into a separate component called RoomContent
+function RoomContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const roomId = searchParams.get("id") || "dSpaces-Room";
@@ -185,5 +186,20 @@ export default function RoomPage() {
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #4b5563; }
       `}} />
     </div>
+  );
+}
+
+// 2. Here we export the default Page component wrapped inside <Suspense> 
+// This completely fixes the Next.js 14 prerendering error
+export default function RoomPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex flex-col items-center justify-center h-screen bg-[#030712] text-white">
+        <div className="animate-spin rounded-full h-14 w-14 border-t-4 border-b-4 border-blue-500 mb-6 shadow-[0_0_15px_rgba(59,130,246,0.5)]"></div>
+        <p className="text-lg font-semibold tracking-widest animate-pulse text-blue-400">Loading Secure Environment...</p>
+      </div>
+    }>
+      <RoomContent />
+    </Suspense>
   );
 }
