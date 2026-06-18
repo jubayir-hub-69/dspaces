@@ -6,33 +6,31 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "next lint"
   },
   "dependencies": {
-    "@dtelecom/components-react": "^1.0.46",
-    "@dtelecom/components-styles": "^1.0.27",
-    "@dtelecom/livekit-client": "^1.12.24",
-    "@dtelecom/server-sdk-js": "^3.3.0",
-    "@solana/wallet-adapter-base": "^0.9.27",
-    "@solana/wallet-adapter-react": "^0.15.39",
-    "@solana/wallet-adapter-react-ui": "^0.9.39",
-    "@solana/web3.js": "^1.98.4",
-    "livekit-server-sdk": "^2.15.4",
-    "next": "16.2.9",
-    "next-auth": "^4.24.14",
-    "nodemailer": "^7.0.13",
-    "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "@dtelecom/components-react": "^1.0.0",
+    "@dtelecom/components-styles": "^1.0.0",
+    "@google/generative-ai": "^0.12.0",
+    "@solana/wallet-adapter-base": "^0.9.23",
+    "@solana/wallet-adapter-react": "^0.15.35",
+    "@solana/wallet-adapter-react-ui": "^0.9.35",
+    "@solana/wallet-adapter-wallets": "^0.19.32",
+    "@solana/web3.js": "^1.91.8",
+    "livekit-client": "^2.1.2",
+    "livekit-server-sdk": "^2.3.0",
+    "next": "14.2.3",
+    "react": "^18",
+    "react-dom": "^18"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
-    "@types/nodemailer": "^8.0.1",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "eslint": "^9",
-    "eslint-config-next": "16.2.9",
-    "tailwindcss": "^4",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "eslint": "^8",
+    "eslint-config-next": "14.2.3",
+    "postcss": "^8",
+    "tailwindcss": "^3.4.1",
     "typescript": "^5"
   }
 }
