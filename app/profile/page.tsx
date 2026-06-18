@@ -10,12 +10,15 @@ const WalletMultiButton = dynamic(
   { ssr: false }
 );
 
+const getDb = () => JSON.parse(localStorage.getItem('dspaces_db') || '[]');
+const saveDb = (db: any[]) => localStorage.setItem('dspaces_db', JSON.stringify(db));
+
 export default function ProfilePage() {
   const router = useRouter();
   const { connected, publicKey, disconnect } = useWallet();
 
+  const [myAcc, setMyAcc] = useState<any>(null);
   const [userName, setUserName] = useState("User");
-  const [email, setEmail] = useState("");
   const [avatar, setAvatar] = useState("👨‍🚀");
   const [history, setHistory] = useState<any[]>([]);
   const [isEditing, setIsEditing] = useState(false);
@@ -27,64 +30,62 @@ export default function ProfilePage() {
   const [linkOtpSent, setLinkOtpSent] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  const avatars = ["👨‍🚀", "🥷", "🧙‍♂️", "👩‍🎤", "🤖", "👻", "🦊", "🐼"];
+
   const showToast = (msg: string) => {
     setToastMsg(msg);
     setTimeout(() => setToastMsg(""), 4000);
   };
 
+  // Load User Data strictly from active session
   useEffect(() => {
-    const savedEmail = localStorage.getItem("dspaces_email") || "";
-    setEmail(savedEmail);
-
-    const savedName = localStorage.getItem("dspaces_username");
-    if (savedName) setUserName(savedName);
-    else if (savedEmail) setUserName(savedEmail.split("@")[0]);
-
-    const savedAvatar = localStorage.getItem("dspaces_avatar");
-    if (savedAvatar) setAvatar(savedAvatar);
-
-    const savedHistory = localStorage.getItem("dspaces_history");
-    if (savedHistory) {
-      setHistory(JSON.parse(savedHistory));
-    } else {
+    const sessionId = localStorage.getItem("dspaces_active_session");
+    if (!sessionId) {
+      router.push("/");
+      return;
+    }
+    const db = getDb();
+    const acc = db.find((a: any) => a.email === sessionId || a.wallet === sessionId);
+    
+    if (acc) {
+      setMyAcc(acc);
+      setUserName(acc.name);
+      setAvatar(acc.avatar);
       setHistory([
         { id: "dSpaces-9223", date: "Oct 24, 2026", duration: "45 mins", role: "Host" },
         { id: "dSpaces-1045", date: "Oct 22, 2026", duration: "12 mins", role: "Participant" },
       ]);
-    }
-
-    if (!connected && !savedEmail) {
+    } else {
       router.push("/");
     }
-  }, [connected, router]);
+  }, [router]);
 
-  // Strict Account Linking Logic for Wallet
+  // Strict Wallet Linking Logic
   useEffect(() => {
-    if (connected && publicKey) {
-      const currentWallet = publicKey.toString();
-      const usedWallets = JSON.parse(localStorage.getItem("dspaces_used_wallets") || "[]");
-      const linkedWallet = localStorage.getItem("dspaces_linked_wallet");
+    if (connected && publicKey && myAcc && !myAcc.wallet) {
+      const walletStr = publicKey.toString();
+      const db = getDb();
+      const existingWalletAcc = db.find((a: any) => a.wallet === walletStr);
 
-      if (linkedWallet === currentWallet) return;
-
-      if (usedWallets.includes(currentWallet)) {
+      if (existingWalletAcc) {
         showToast("This Wallet is already used by another account!");
         disconnect(); 
       } else {
-        localStorage.setItem("dspaces_linked_wallet", currentWallet);
-        usedWallets.push(currentWallet);
-        localStorage.setItem("dspaces_used_wallets", JSON.stringify(usedWallets));
+        const updatedDb = db.map((a: any) => (a.email === myAcc.email && a.wallet === myAcc.wallet) ? { ...a, wallet: walletStr } : a);
+        saveDb(updatedDb);
+        setMyAcc({ ...myAcc, wallet: walletStr });
         showToast("Wallet linked successfully!");
       }
     }
-  }, [connected, publicKey, disconnect]);
+  }, [connected, publicKey, myAcc, disconnect]);
 
   const handleSendLinkOTP = async () => {
     const emailInput = linkEmailInput.trim();
     if (!emailInput) return showToast("Please enter an email address.");
     
-    const usedEmails = JSON.parse(localStorage.getItem("dspaces_used_emails") || "[]");
-    if (usedEmails.includes(emailInput)) {
+    const db = getDb();
+    const existingEmailAcc = db.find((a: any) => a.email === emailInput);
+    if (existingEmailAcc) {
       return showToast("This Email is already used by another account!");
     }
 
@@ -112,13 +113,11 @@ export default function ProfilePage() {
       const data = await res.json();
       if (data.success) {
         const verifiedEmail = data.email;
-        setEmail(verifiedEmail);
-        localStorage.setItem("dspaces_email", verifiedEmail);
-        
-        const usedEmails = JSON.parse(localStorage.getItem("dspaces_used_emails") || "[]");
-        usedEmails.push(verifiedEmail);
-        localStorage.setItem("dspaces_used_emails", JSON.stringify(usedEmails));
+        const db = getDb();
+        const updatedDb = db.map((a: any) => (a.email === myAcc.email && a.wallet === myAcc.wallet) ? { ...a, email: verifiedEmail } : a);
+        saveDb(updatedDb);
 
+        setMyAcc({ ...myAcc, email: verifiedEmail });
         setLinkingEmail(false);
         showToast("Email successfully linked!");
       } else { showToast(data.error || "Invalid OTP."); }
@@ -126,34 +125,32 @@ export default function ProfilePage() {
     finally { setLoading(false); }
   };
 
-  // Profile Picture Upload Logic
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.size > 2 * 1024 * 1024) { 
-        return showToast("Image size should be less than 2MB.");
-      }
+      if (file.size > 2 * 1024 * 1024) return showToast("Image size should be less than 2MB.");
       const reader = new FileReader();
-      reader.onloadend = () => {
-        setAvatar(reader.result as string);
-      };
+      reader.onloadend = () => setAvatar(reader.result as string);
       reader.readAsDataURL(file);
     }
   };
 
   const saveProfile = () => {
-    localStorage.setItem("dspaces_username", userName);
-    localStorage.setItem("dspaces_avatar", avatar);
+    const db = getDb();
+    const updatedDb = db.map((a: any) => (a.email === myAcc.email && a.wallet === myAcc.wallet) ? { ...a, name: userName, avatar: avatar } : a);
+    saveDb(updatedDb);
+    setMyAcc({ ...myAcc, name: userName, avatar: avatar });
     setIsEditing(false);
     showToast("Profile Updated Successfully!");
   };
 
   const handleLogout = () => {
-    localStorage.removeItem("dspaces_email");
-    localStorage.removeItem("dspaces_linked_wallet");
+    localStorage.removeItem("dspaces_active_session");
     if (connected) disconnect();
     router.push("/");
   };
+
+  if (!myAcc) return null;
 
   return (
     <main className="min-h-screen bg-[#0f0f0f] text-white font-sans relative overflow-hidden">
@@ -176,11 +173,9 @@ export default function ProfilePage() {
       </nav>
 
       <section className="relative z-10 max-w-4xl mx-auto px-4 py-10 flex flex-col md:flex-row gap-8">
-        
         <div className="w-full md:w-1/3 flex flex-col gap-6">
           <div className="bg-[#1a1a1a] border border-gray-800 rounded-3xl p-6 flex flex-col items-center text-center shadow-2xl">
             
-            {/* Clickable Profile Picture */}
             <div className="relative text-6xl bg-gray-800 w-24 h-24 flex items-center justify-center rounded-full mb-4 border-2 border-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.3)] overflow-hidden group">
               {avatar.startsWith("data:image") ? (
                 <img src={avatar} alt="Profile" className="w-full h-full object-cover" />
@@ -205,6 +200,13 @@ export default function ProfilePage() {
                   onChange={(e) => setUserName(e.target.value)} 
                   className="w-full bg-black border border-gray-700 rounded-xl px-4 py-2 text-center focus:border-blue-500 outline-none"
                 />
+                <div className="flex flex-wrap justify-center gap-2 my-2">
+                  {avatars.map((a) => (
+                    <button key={a} onClick={() => setAvatar(a)} className={`text-2xl p-1 rounded-lg ${avatar === a ? 'bg-blue-500/20 border border-blue-500' : 'hover:bg-gray-800'}`}>
+                      {a}
+                    </button>
+                  ))}
+                </div>
                 <button onClick={saveProfile} className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-2 rounded-xl mt-2">
                   Save Profile
                 </button>
@@ -230,15 +232,15 @@ export default function ProfilePage() {
                     <div className="bg-blue-500/20 p-2 rounded-lg text-blue-500">📧</div>
                     <div className="flex flex-col">
                       <span className="text-xs text-gray-400">Email</span>
-                      <span className="text-sm font-semibold truncate max-w-[120px]">{email ? email : "Not Linked"}</span>
+                      <span className="text-sm font-semibold truncate max-w-[120px]">{myAcc.email ? myAcc.email : "Not Linked"}</span>
                     </div>
                   </div>
-                  {email ? <span className="text-green-500 text-xs font-bold">✔ Linked</span> : (
+                  {myAcc.email ? <span className="text-green-500 text-xs font-bold">✔ Linked</span> : (
                     <button onClick={() => setLinkingEmail(!linkingEmail)} className="text-xs bg-blue-600 hover:bg-blue-500 px-3 py-1.5 rounded-lg font-bold">Link</button>
                   )}
                 </div>
                 
-                {linkingEmail && !email && (
+                {linkingEmail && !myAcc.email && (
                   <div className="p-3 bg-gray-900 border-t border-gray-800 flex flex-col gap-2">
                     {!linkOtpSent ? (
                       <>
@@ -260,10 +262,10 @@ export default function ProfilePage() {
                   <div className="bg-purple-500/20 p-2 rounded-lg text-purple-500">💳</div>
                   <div className="flex flex-col">
                     <span className="text-xs text-gray-400">Solana Wallet</span>
-                    <span className="text-sm font-semibold truncate max-w-[90px]">{publicKey ? publicKey.toString() : "Not Linked"}</span>
+                    <span className="text-sm font-semibold truncate max-w-[90px]">{myAcc.wallet ? myAcc.wallet : "Not Linked"}</span>
                   </div>
                 </div>
-                {publicKey ? <span className="text-green-500 text-xs font-bold">✔ Linked</span> : (
+                {myAcc.wallet ? <span className="text-green-500 text-xs font-bold">✔ Linked</span> : (
                    <div className="scale-75 origin-right"><WalletMultiButton /></div>
                 )}
               </div>
@@ -304,17 +306,6 @@ export default function ProfilePage() {
                 </div>
               )}
             </div>
-            
-            <div className="mt-8 p-4 bg-purple-500/10 border border-purple-500/20 rounded-2xl flex items-start gap-4">
-              <div className="text-2xl">🤖</div>
-              <div>
-                <h4 className="text-sm font-bold text-purple-400 mb-1">AI Summaries Coming Soon!</h4>
-                <p className="text-xs text-gray-400 leading-relaxed">
-                  Your future meetings will be automatically transcribed and summarized using advanced AI. You'll be able to see the meeting notes, action items, and who said what right here in your history.
-                </p>
-              </div>
-            </div>
-
           </div>
         </div>
       </section>
