@@ -11,7 +11,6 @@ const WalletMultiButton = dynamic(
   { ssr: false }
 );
 
-// Unified Database Helpers
 const getDb = () => JSON.parse(localStorage.getItem('dspaces_db') || '[]');
 const saveDb = (db: any[]) => localStorage.setItem('dspaces_db', JSON.stringify(db));
 
@@ -35,7 +34,6 @@ export default function Home() {
     setTimeout(() => setToastMsg(""), 3500);
   };
 
-  // 1. Check Active Session on Load
   useEffect(() => {
     const sessionId = localStorage.getItem("dspaces_active_session");
     if (sessionId) {
@@ -57,7 +55,6 @@ export default function Home() {
     }
   }, []);
 
-  // 2. Wallet Auto-Login Handler (Strictly checks DB)
   useEffect(() => {
     const sessionId = localStorage.getItem("dspaces_active_session");
 
@@ -65,7 +62,12 @@ export default function Home() {
       const walletStr = publicKey.toString();
       
       if (!sessionId) {
-        // Logging in via Wallet
+        // Save to Global DB instantly
+        fetch('/api/global-db', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'ADD', type: 'wallet', value: walletStr })
+        });
+
         let db = getDb();
         let acc = db.find((a: any) => a.wallet === walletStr);
         if (!acc) {
@@ -78,7 +80,6 @@ export default function Home() {
         setUserName(acc.name);
       }
     } else if (!connected && sessionId && myAcc && myAcc.wallet === sessionId) {
-      // Wallet was disconnected, log out
       handleLogout();
     }
   }, [connected, publicKey]);
@@ -109,6 +110,13 @@ export default function Home() {
       const data = await res.json();
       if (data.success) {
         const verifiedEmail = data.email;
+        
+        // Save to Global DB instantly
+        fetch('/api/global-db', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'ADD', type: 'email', value: verifiedEmail })
+        });
+
         let db = getDb();
         let acc = db.find((a: any) => a.email === verifiedEmail);
         
@@ -136,23 +144,18 @@ export default function Home() {
 
   const handleCreateRoom = () => {
     if (!userName.trim()) return showToast("Please enter your Display Name first.");
-    
-    // Update DB with new name
     let db = getDb();
     const updatedDb = db.map((a: any) => (a.email === myAcc.email && a.wallet === myAcc.wallet) ? { ...a, name: userName.trim() } : a);
     saveDb(updatedDb);
-
     const randomCode = Math.floor(1000 + Math.random() * 9000);
     router.push(`/room?id=dSpaces-${randomCode}&name=${userName.trim()}&ishost=true`);
   };
 
   const handleJoinRoom = () => {
     if (!userName.trim()) return showToast("Please enter your Display Name first.");
-    
     let db = getDb();
     const updatedDb = db.map((a: any) => (a.email === myAcc.email && a.wallet === myAcc.wallet) ? { ...a, name: userName.trim() } : a);
     saveDb(updatedDb);
-
     let finalId = roomId.trim();
     if (!finalId) return showToast("Please enter a Room ID or Link to join.");
 
@@ -166,10 +169,8 @@ export default function Home() {
         else if (finalId.includes("id=")) finalId = finalId.split("id=")[1].split("&")[0];
       }
     }
-
     const isValidFormat = /^dSpaces-\d{4}$/.test(finalId);
     if (!isValidFormat) return showToast("Invalid Room ID! Please enter a valid code (e.g., dSpaces-1234).");
-
     router.push(`/room?id=${finalId}&name=${userName.trim()}`);
   };
 
