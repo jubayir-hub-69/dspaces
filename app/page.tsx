@@ -25,8 +25,14 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [statusMsg, setStatusMsg] = useState("");
   const [isDark, setIsDark] = useState(true);
+  
+  const [toastMsg, setToastMsg] = useState("");
 
-  // Strict Wallet Verification: Force disconnect if wallet is locked (no publicKey)
+  const showToast = (msg: string) => {
+    setToastMsg(msg);
+    setTimeout(() => setToastMsg(""), 3500);
+  };
+
   useEffect(() => {
     if (connected && !publicKey) {
       disconnect();
@@ -54,7 +60,7 @@ export default function Home() {
   }, []);
 
   const handleSendOTP = async () => {
-    if (!email.trim()) return alert("Please enter a valid email address.");
+    if (!email.trim()) return showToast("Please enter a valid email address.");
     setLoading(true);
     setStatusMsg("Sending secure code...");
     try {
@@ -69,7 +75,7 @@ export default function Home() {
   };
 
   const handleVerifyOTP = async () => {
-    if (!otp.trim()) return alert("Please enter the 6-digit OTP.");
+    if (!otp.trim()) return showToast("Please enter the 6-digit OTP.");
     setLoading(true);
     setStatusMsg("Verifying securely...");
     try {
@@ -89,16 +95,16 @@ export default function Home() {
   };
 
   const handleCreateRoom = () => {
-    if (!userName.trim()) return alert("Please enter your Display Name first.");
+    if (!userName.trim()) return showToast("Please enter your Display Name first.");
     const randomCode = Math.floor(1000 + Math.random() * 9000);
     const finalName = userName.trim();
     router.push(`/room?id=dSpaces-${randomCode}&name=${finalName}&ishost=true`);
   };
 
   const handleJoinRoom = () => {
-    if (!userName.trim()) return alert("Please enter your Display Name first.");
+    if (!userName.trim()) return showToast("Please enter your Display Name first.");
     let finalId = roomId.trim();
-    if (!finalId) return alert("Please enter a Room ID or Link to join.");
+    if (!finalId) return showToast("Please enter a Room ID or Link to join.");
 
     if (finalId.includes("http") || finalId.includes("?")) {
       try {
@@ -113,7 +119,7 @@ export default function Home() {
 
     const isValidFormat = /^dSpaces-\d{4}$/.test(finalId);
     if (!isValidFormat) {
-      alert("Invalid Room ID! Please enter a valid code (e.g., dSpaces-1234).");
+      showToast("Invalid Room ID! Please enter a valid code (e.g., dSpaces-1234).");
       return;
     }
 
@@ -130,10 +136,17 @@ export default function Home() {
 
   return (
     <main className={`min-h-screen transition-colors duration-500 relative overflow-hidden font-sans ${isDark ? 'bg-[#030712] text-white' : 'bg-gray-50 text-gray-900'}`}>
+      
+      {toastMsg && (
+        <div className="absolute top-6 left-1/2 -translate-x-1/2 z-[1000] bg-red-500/90 backdrop-blur-md text-white px-6 py-3 rounded-xl shadow-2xl font-semibold text-sm animate-fade-in-up border border-red-400">
+          {toastMsg}
+        </div>
+      )}
+
       <div className={`absolute top-[-20%] left-[-10%] w-[60%] h-[60%] blur-[150px] rounded-full pointer-events-none ${isDark ? 'bg-blue-600/10' : 'bg-blue-300/30'}`}></div>
       <div className={`absolute bottom-[-20%] right-[-10%] w-[60%] h-[60%] blur-[150px] rounded-full pointer-events-none ${isDark ? 'bg-purple-600/10' : 'bg-purple-300/30'}`}></div>
 
-      <style dangerouslySetInnerHTML={{__html: `@keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } } .animate-fade-in-up { animation: fadeInUp 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards; }`}} />
+      <style dangerouslySetInnerHTML={{__html: `@keyframes fadeInUp { from { opacity: 0; transform: translateY(-20px); } to { opacity: 1; transform: translateY(0); } } .animate-fade-in-up { animation: fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }`}} />
 
       <nav className={`relative z-50 flex justify-between items-center px-4 sm:px-8 py-5 border-b backdrop-blur-md ${isDark ? 'border-white/5 bg-black/20' : 'border-gray-200 bg-white/40'}`}>
         <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 bg-clip-text text-transparent drop-shadow-sm cursor-pointer hover:scale-105 transition-transform">dSpaces</h1>
@@ -142,12 +155,14 @@ export default function Home() {
             {isDark ? <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4.22 4.22a1 1 0 011.415 0l.708.708a1 1 0 01-1.414 1.414l-.708-.708a1 1 0 010-1.414zM18 10a1 1 0 01-1 1h-1a1 1 0 110-2h1a1 1 0 011 1zM15.657 14.243a1 1 0 010 1.415l-.708.708a1 1 0 01-1.414-1.414l.708-.708a1 1 0 011.414 0zM10 18a1 1 0 01-1-1v-1a1 1 0 112 0v1a1 1 0 01-1 1zm-4.22-4.22a1 1 0 01-1.415 0l-.708-.708a1 1 0 011.414-1.414l.708.708a1 1 0 010 1.414zM2 10a1 1 0 011-1h1a1 1 0 110 2H3a1 1 0 01-1-1zm2.343-4.243a1 1 0 010-1.415l.708-.708a1 1 0 011.414 1.414l-.708.708a1 1 0 01-1.414 0zM10 5a5 5 0 100 10 5 5 0 000-10z"></path></svg> : <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"></path></svg>}
           </button>
           
-          <div className="hover:scale-105 transition-transform">
-            <WalletMultiButton className="!bg-indigo-600 hover:!bg-indigo-700 !h-10 !px-6 !rounded-xl !font-bold !shadow-lg !shadow-indigo-500/20" />
-          </div>
+          {!emailAuthenticated && (
+            <div className="hover:scale-105 transition-transform">
+              <WalletMultiButton className="!bg-indigo-600 hover:!bg-indigo-700 !h-10 !px-6 !rounded-xl !font-bold !shadow-lg !shadow-indigo-500/20" />
+            </div>
+          )}
 
           {emailAuthenticated && (
-            <div className={`flex items-center gap-3 border rounded-xl p-1.5 pl-4 shadow-lg animate-fade-in-up ${isDark ? 'bg-gray-900/80 border-gray-700/50' : 'bg-white border-gray-200'}`}>
+            <div className={`flex items-center gap-3 border rounded-xl p-1.5 pl-4 shadow-lg ${isDark ? 'bg-gray-900/80 border-gray-700/50' : 'bg-white border-gray-200'}`}>
               <div className="flex items-center gap-2 max-w-[120px] sm:max-w-xs">
                 <span className="relative flex h-2.5 w-2.5">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
@@ -161,7 +176,7 @@ export default function Home() {
         </div>
       </nav>
 
-      <section className="relative z-10 flex flex-col items-center justify-center min-h-[80vh] px-4 py-12 text-center animate-fade-in-up">
+      <section className="relative z-10 flex flex-col items-center justify-center min-h-[80vh] px-4 py-12 text-center">
         {!isAuthenticated && (
           <div className="mb-8">
             <h1 className="text-4xl sm:text-6xl font-black mb-4 tracking-tight">The Future of <span className="bg-gradient-to-r from-blue-500 to-purple-500 bg-clip-text text-transparent">Web3 Meetings</span></h1>
@@ -189,7 +204,7 @@ export default function Home() {
                       <button onClick={handleSendOTP} disabled={loading} className="w-full py-3.5 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 text-white font-bold rounded-xl text-sm transition-all shadow-lg hover:shadow-blue-500/25 active:scale-[0.98]">{loading ? "Sending Secure Code..." : "Get OTP Code"}</button>
                     </div>
                   ) : (
-                    <div className="flex flex-col gap-3 animate-fade-in-up">
+                    <div className="flex flex-col gap-3">
                       <div className="flex justify-between items-center mb-1"><span className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Code sent to <span className={isDark ? 'text-white' : 'text-black'}>{email}</span></span><button onClick={() => { setOtpSent(false); setOtp(""); }} className="text-xs text-blue-500 hover:text-blue-400 underline">Change</button></div>
                       <input type="text" placeholder="• • • • • •" value={otp} maxLength={6} onChange={(e) => setOtp(e.target.value)} className={`w-full px-4 py-3.5 rounded-xl text-center text-2xl tracking-[0.5em] font-bold focus:outline-none focus:ring-2 focus:ring-green-500 transition-all ${isDark ? 'bg-gray-950/50 border border-gray-700 text-white' : 'bg-white border border-gray-300 text-gray-900'}`}/>
                       <button onClick={handleVerifyOTP} disabled={loading} className="w-full py-3.5 bg-green-600 hover:bg-green-500 disabled:bg-gray-700 text-white font-bold rounded-xl text-sm transition-all shadow-lg hover:shadow-green-500/25 active:scale-[0.98]">{loading ? "Verifying..." : "Secure Login"}</button>
@@ -200,7 +215,7 @@ export default function Home() {
               </div>
             </div>
           ) : (
-            <div className="flex flex-col gap-6 animate-fade-in-up">
+            <div className="flex flex-col gap-6">
               <div className="mb-2">
                 <h2 className="text-3xl font-black">Welcome to dSpaces!</h2>
                 <p className={`text-sm mt-2 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Set your Display Name first, then choose to create or join a meeting.</p>
