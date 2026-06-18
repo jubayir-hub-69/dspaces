@@ -55,8 +55,12 @@ export default function Home() {
     if (savedEmail) {
       setEmailAuthenticated(true);
       setLoggedInEmail(savedEmail);
-      if (!userName) setUserName(savedEmail.split("@")[0]);
     }
+
+    const savedName = localStorage.getItem("dspaces_username");
+    if (savedName) setUserName(savedName);
+    else if (savedEmail) setUserName(savedEmail.split("@")[0]);
+
   }, []);
 
   const handleSendOTP = async () => {
@@ -87,7 +91,9 @@ export default function Home() {
         setEmailAuthenticated(true);
         setLoggedInEmail(data.email);
         localStorage.setItem("dspaces_email", data.email);
-        setUserName(data.email.split("@")[0]);
+        
+        const savedName = localStorage.getItem("dspaces_username");
+        setUserName(savedName || data.email.split("@")[0]);
         setStatusMsg("");
       } else { setStatusMsg(data.error || "Invalid OTP."); }
     } catch (err) { setStatusMsg("Verification error."); } 
@@ -96,6 +102,7 @@ export default function Home() {
 
   const handleCreateRoom = () => {
     if (!userName.trim()) return showToast("Please enter your Display Name first.");
+    localStorage.setItem("dspaces_username", userName.trim());
     const randomCode = Math.floor(1000 + Math.random() * 9000);
     const finalName = userName.trim();
     router.push(`/room?id=dSpaces-${randomCode}&name=${finalName}&ishost=true`);
@@ -103,6 +110,7 @@ export default function Home() {
 
   const handleJoinRoom = () => {
     if (!userName.trim()) return showToast("Please enter your Display Name first.");
+    localStorage.setItem("dspaces_username", userName.trim());
     let finalId = roomId.trim();
     if (!finalId) return showToast("Please enter a Room ID or Link to join.");
 
@@ -127,13 +135,6 @@ export default function Home() {
     router.push(`/room?id=${finalId}&name=${finalName}`);
   };
 
-  const handleLogoutEmail = () => {
-    localStorage.removeItem("dspaces_email");
-    setEmailAuthenticated(false);
-    setLoggedInEmail("");
-    setEmail(""); setOtp(""); setOtpSent(false); setStatusMsg("");
-  };
-
   return (
     <main className={`min-h-screen transition-colors duration-500 relative overflow-hidden font-sans ${isDark ? 'bg-[#030712] text-white' : 'bg-gray-50 text-gray-900'}`}>
       
@@ -150,28 +151,25 @@ export default function Home() {
 
       <nav className={`relative z-50 flex justify-between items-center px-4 sm:px-8 py-5 border-b backdrop-blur-md ${isDark ? 'border-white/5 bg-black/20' : 'border-gray-200 bg-white/40'}`}>
         <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 bg-clip-text text-transparent drop-shadow-sm cursor-pointer hover:scale-105 transition-transform">dSpaces</h1>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3 sm:gap-4">
           <button onClick={() => setIsDark(!isDark)} className={`p-2 rounded-full transition-colors ${isDark ? 'bg-gray-800 text-yellow-400 hover:bg-gray-700' : 'bg-gray-200 text-gray-800 hover:bg-gray-300'}`}>
             {isDark ? <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4.22 4.22a1 1 0 011.415 0l.708.708a1 1 0 01-1.414 1.414l-.708-.708a1 1 0 010-1.414zM18 10a1 1 0 01-1 1h-1a1 1 0 110-2h1a1 1 0 011 1zM15.657 14.243a1 1 0 010 1.415l-.708.708a1 1 0 01-1.414-1.414l.708-.708a1 1 0 011.414 0zM10 18a1 1 0 01-1-1v-1a1 1 0 112 0v1a1 1 0 01-1 1zm-4.22-4.22a1 1 0 01-1.415 0l-.708-.708a1 1 0 011.414-1.414l.708.708a1 1 0 010 1.414zM2 10a1 1 0 011-1h1a1 1 0 110 2H3a1 1 0 01-1-1zm2.343-4.243a1 1 0 010-1.415l.708-.708a1 1 0 011.414 1.414l-.708.708a1 1 0 01-1.414 0zM10 5a5 5 0 100 10 5 5 0 000-10z"></path></svg> : <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"></path></svg>}
           </button>
           
-          {!emailAuthenticated && (
-            <div className="hover:scale-105 transition-transform">
-              <WalletMultiButton className="!bg-indigo-600 hover:!bg-indigo-700 !h-10 !px-6 !rounded-xl !font-bold !shadow-lg !shadow-indigo-500/20" />
-            </div>
+          {isAuthenticated && (
+            <button onClick={() => router.push('/profile')} className="p-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm px-4 shadow-lg shadow-blue-500/20 transition-all hidden sm:block">
+              My Profile
+            </button>
           )}
 
-          {emailAuthenticated && (
-            <div className={`flex items-center gap-3 border rounded-xl p-1.5 pl-4 shadow-lg ${isDark ? 'bg-gray-900/80 border-gray-700/50' : 'bg-white border-gray-200'}`}>
-              <div className="flex items-center gap-2 max-w-[120px] sm:max-w-xs">
-                <span className="relative flex h-2.5 w-2.5">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500"></span>
-                </span>
-                <span className={`text-sm font-semibold truncate ${isDark ? 'text-gray-200' : 'text-gray-800'}`}>{loggedInEmail}</span>
-              </div>
-              <button onClick={handleLogoutEmail} className="bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white px-4 py-2 rounded-lg text-xs font-bold transition-all duration-300">Logout</button>
-            </div>
+          <div className="hover:scale-105 transition-transform hidden sm:block">
+            <WalletMultiButton className="!bg-indigo-600 hover:!bg-indigo-700 !h-10 !px-6 !rounded-xl !font-bold !shadow-lg !shadow-indigo-500/20" />
+          </div>
+
+          {isAuthenticated && (
+             <button onClick={() => router.push('/profile')} className="p-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white sm:hidden shadow-lg shadow-blue-500/20">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
+             </button>
           )}
         </div>
       </nav>
@@ -210,7 +208,6 @@ export default function Home() {
                       <button onClick={handleVerifyOTP} disabled={loading} className="w-full py-3.5 bg-green-600 hover:bg-green-500 disabled:bg-gray-700 text-white font-bold rounded-xl text-sm transition-all shadow-lg hover:shadow-green-500/25 active:scale-[0.98]">{loading ? "Verifying..." : "Secure Login"}</button>
                     </div>
                   )}
-                  {statusMsg && <p className="text-xs text-center font-medium mt-1 text-blue-500 bg-blue-500/10 py-2 rounded-lg">{statusMsg}</p>}
                 </div>
               </div>
             </div>
