@@ -136,24 +136,44 @@ export default function RoomPage() {
   }
 
   return (
-    <main data-lk-theme="default" className="w-full h-screen bg-[#0f0f0f] relative overflow-hidden pointer-events-none">
+    <main data-lk-theme="default" className="w-screen h-screen bg-[#0f0f0f] relative overflow-hidden pointer-events-none">
       <style dangerouslySetInnerHTML={{__html: `
-        /* Clean Grid Layout specific fixes */
-        .lk-grid-layout {
-           gap: 12px !important;
-           padding: 12px !important;
-           margin-top: 60px !important; /* Space for top banner */
-        }
-        
-        .lk-participant-tile video {
-           border-radius: 12px !important;
-           object-fit: cover !important;
+        /* Strict sizing to prevent jump/layout shifts during screen share */
+        .lk-video-conference {
+          height: 100vh !important;
+          width: 100vw !important;
+          max-height: 100vh !important;
+          display: flex !important;
+          flex-direction: column !important;
+          overflow: hidden !important;
         }
 
-        /* Prevent screen share from overflowing */
-        .lk-participant-tile[data-lk-source="screen_share"] video {
+        .lk-video-conference-inner {
+           flex: 1 1 auto !important;
+           display: flex !important;
+           overflow: hidden !important;
+        }
+
+        /* Focus layout specific constraint */
+        .lk-focus-layout {
+           height: 100% !important;
+           width: 100% !important;
+           overflow: hidden !important;
+        }
+
+        .lk-focused-room-screen {
+           flex: 1 1 auto !important;
+           min-height: 0 !important; 
+           display: flex !important;
+           align-items: center !important;
+           justify-content: center !important;
+        }
+
+        .lk-focused-room-screen video {
+          max-height: 100% !important;
+          max-width: 100% !important;
           object-fit: contain !important;
-          background-color: #000 !important;
+          border-radius: 8px !important;
         }
 
         .lk-participant-name {
