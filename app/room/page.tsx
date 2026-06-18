@@ -138,42 +138,26 @@ export default function RoomPage() {
   return (
     <main data-lk-theme="default" className="w-screen h-screen bg-[#0f0f0f] relative overflow-hidden pointer-events-none">
       <style dangerouslySetInnerHTML={{__html: `
-        /* Strict sizing to prevent jump/layout shifts during screen share */
         .lk-video-conference {
           height: 100vh !important;
           width: 100vw !important;
           max-height: 100vh !important;
-          display: flex !important;
-          flex-direction: column !important;
-          overflow: hidden !important;
         }
 
-        .lk-video-conference-inner {
-           flex: 1 1 auto !important;
-           display: flex !important;
-           overflow: hidden !important;
+        .lk-grid-layout {
+           gap: 12px !important;
+           padding: 12px !important;
+           padding-top: 70px !important; 
         }
 
-        /* Focus layout specific constraint */
-        .lk-focus-layout {
-           height: 100% !important;
-           width: 100% !important;
-           overflow: hidden !important;
+        .lk-participant-tile video {
+           border-radius: 12px !important;
+           object-fit: cover !important;
         }
 
-        .lk-focused-room-screen {
-           flex: 1 1 auto !important;
-           min-height: 0 !important; 
-           display: flex !important;
-           align-items: center !important;
-           justify-content: center !important;
-        }
-
-        .lk-focused-room-screen video {
-          max-height: 100% !important;
-          max-width: 100% !important;
+        .lk-participant-tile[data-lk-source="screen_share"] video {
           object-fit: contain !important;
-          border-radius: 8px !important;
+          background-color: #000 !important;
         }
 
         .lk-participant-name {
@@ -184,6 +168,12 @@ export default function RoomPage() {
           font-size: 13px !important;
           font-weight: bold !important;
           backdrop-filter: blur(5px) !important;
+        }
+
+        .lk-chat {
+          border-left: 1px solid #333 !important;
+          background-color: #111 !important;
+          box-shadow: -5px 0 20px rgba(0,0,0,0.5) !important;
         }
       `}} />
 
