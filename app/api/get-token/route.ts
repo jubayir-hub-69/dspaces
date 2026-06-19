@@ -12,23 +12,42 @@ export async function POST(req: Request) {
 
         if (!apiKey || !apiSecret) {
             return NextResponse.json({ 
-                error: "Missing API Key or Secret in Vercel. Please check Environment Variables." 
-            }, { status: 500 });
+                error: "Missing API Key or Secret in Vercel." 
+            }, { status: 400 });
         }
 
+        // 1. Create Token
         const at = new AccessToken(apiKey, apiSecret, {
             identity: participantName,
         });
 
-        at.addGrant({ roomJoin: true, room: roomName });
+        // 2. Add required grants (dTelecom strictly needs canPublish and canSubscribe)
+        at.addGrant({ 
+            roomJoin: true, 
+            room: roomName,
+            canPublish: true,
+            canSubscribe: true 
+        });
         
         const token = at.toJwt();
 
-        const clientIp = req.headers.get('x-forwarded-for')?.split(',')[0] || '127.0.0.1';
+        // 3. Get IP and fetch WebSocket URL
+        const clientIp = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || '127.0.0.1';
         const wsUrl = await at.getWsUrl(clientIp);
 
+        // If dTelecom server rejects or fails to return a URL
+        if (!wsUrl) {
+             return NextResponse.json({ 
+                 error: "dTelecom server did not return a valid WebSocket URL. Please check your dTelecom dashboard limits." 
+             }, { status: 500 });
+        }
+
         return NextResponse.json({ token, url: wsUrl });
+        
     } catch (error: any) {
-        return NextResponse.json({ error: error.message || "Failed to generate token" }, { status: 500 });
+        // This will print the exact server error on your screen
+        return NextResponse.json({ 
+            error: `dTelecom API Error: ${error.message || "Unknown server error occurred"}` 
+        }, { status: 500 });
     }
 }
