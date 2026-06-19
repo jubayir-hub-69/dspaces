@@ -119,75 +119,78 @@ function RoomContent() {
   }
 
   return (
-    <div className="flex flex-col lg:flex-row h-screen bg-[#030712] overflow-hidden font-sans">
+    <div className="flex flex-col lg:flex-row h-[100dvh] bg-[#030712] overflow-hidden font-sans">
       
-      <div className="flex-1 flex flex-col relative shadow-2xl">
+      <div className="flex-1 flex flex-col min-h-0 relative shadow-2xl">
         
-        <div className="px-6 py-4 bg-gray-950/90 border-b border-gray-800 flex justify-between items-center z-10">
+        <div className="flex-none px-6 py-4 bg-gray-950/90 border-b border-gray-800 flex justify-between items-center z-10">
           <div className="flex items-center gap-3">
-            <h1 className="text-white text-lg font-bold">Room: {roomId}</h1>
+            <h1 className="text-white text-lg font-bold truncate max-w-[150px] sm:max-w-xs">Room: {roomId}</h1>
             {isHost && (
               <span className="bg-blue-600 text-white px-2 py-1 rounded text-xs font-bold uppercase tracking-wider">
                 Host
               </span>
             )}
           </div>
-          <button onClick={copyInviteLink} className="bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all border border-gray-700 flex items-center gap-2">
+          <button onClick={copyInviteLink} className="bg-gray-800 hover:bg-gray-700 text-white px-3 sm:px-4 py-2 rounded-lg text-sm font-semibold transition-all border border-gray-700 flex items-center gap-2 flex-shrink-0">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
-            Copy Invite Link
+            <span className="hidden sm:inline">Copy Invite Link</span>
+            <span className="sm:hidden">Copy</span>
           </button>
         </div>
 
-        <div className="flex-1 relative">
-          <LiveKitRoom
-            video={true}
-            audio={true}
-            token={token}
-            serverUrl={serverUrl}
-            data-lk-theme="default"
-            style={{ height: '100%', backgroundColor: '#000' }}
-            onDisconnected={() => router.push("/profile")}
-          >
-            <VideoConference />
-            <RoomAudioRenderer />
-          </LiveKitRoom>
+        <div className="flex-1 min-h-0 relative bg-black">
+          <div className="absolute inset-0">
+            <LiveKitRoom
+              video={true}
+              audio={true}
+              token={token}
+              serverUrl={serverUrl}
+              data-lk-theme="default"
+              style={{ height: '100%', width: '100%' }}
+              onDisconnected={() => router.push("/")}
+            >
+              <VideoConference />
+              <RoomAudioRenderer />
+            </LiveKitRoom>
+          </div>
         </div>
       </div>
 
-      <div className="w-full lg:w-[400px] bg-gray-950 border-l border-gray-800 flex flex-col p-5 text-white z-50">
-        <h2 className="text-2xl font-extrabold text-blue-400 mb-6 flex items-center gap-2">
+      <div className="w-full lg:w-[400px] h-[40vh] lg:h-full bg-gray-950 border-t lg:border-t-0 lg:border-l border-gray-800 flex flex-col p-5 text-white z-50 flex-shrink-0">
+        <h2 className="text-xl lg:text-2xl font-extrabold text-blue-400 mb-4 flex items-center gap-2 flex-shrink-0">
           AI Meeting Assistant
         </h2>
 
-        <div className="flex-1 overflow-y-auto bg-black/60 rounded-2xl p-5 mb-5 border border-gray-800 custom-scrollbar relative">
-          <h3 className="text-xs text-gray-500 font-bold uppercase tracking-widest mb-3 absolute top-3 bg-black px-2">Live Transcript</h3>
-          <div className="mt-4">
+        <div className="flex-1 min-h-0 overflow-y-auto bg-black/60 rounded-2xl p-4 mb-4 border border-gray-800 custom-scrollbar relative">
+          <h3 className="text-xs text-gray-500 font-bold uppercase tracking-widest mb-2 absolute top-2 bg-black px-2">Live Transcript</h3>
+          <div className="mt-6">
             {transcript ? (
               <p className="text-gray-300 text-sm leading-relaxed italic">"{transcript}"</p>
             ) : (
-              <p className="text-center text-sm text-gray-600 mt-10">Start recording to see live conversation...</p>
+              <p className="text-center text-sm text-gray-600 mt-4">Start recording to see live conversation...</p>
             )}
           </div>
         </div>
 
         {summary && (
-          <div className="flex-1 overflow-y-auto bg-blue-900/10 border border-blue-500/30 rounded-2xl p-5 mb-5 custom-scrollbar">
-            <h3 className="font-bold text-blue-400 mb-3">AI Generated Summary</h3>
+          <div className="flex-1 min-h-0 overflow-y-auto bg-blue-900/10 border border-blue-500/30 rounded-2xl p-4 mb-4 custom-scrollbar">
+            <h3 className="font-bold text-blue-400 mb-2 text-sm">AI Generated Summary</h3>
             <div className="text-sm text-gray-200 whitespace-pre-wrap leading-relaxed">{summary}</div>
           </div>
         )}
 
-        <div className="flex flex-col gap-3 mt-auto pt-2">
+        <div className="flex flex-col gap-2 mt-auto flex-shrink-0">
           {!isRecording ? (
-            <button onClick={handleStartAI} className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-4 rounded-xl transition-all">
+            <button onClick={handleStartAI} className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-3 rounded-xl transition-all text-sm">
               Start AI Recording
             </button>
           ) : (
-            <button onClick={handleStopAI} className="w-full bg-red-600 hover:bg-red-500 text-white font-bold py-4 rounded-xl transition-all">
+            <button onClick={handleStopAI} className="w-full bg-red-600 hover:bg-red-500 text-white font-bold py-3 rounded-xl transition-all text-sm">
               Stop & Generate Summary
             </button>
           )}
-          {loadingAI && <p className="text-center text-sm text-blue-400 mt-2">Generating AI Summary...</p>}
+          {loadingAI && <p className="text-center text-xs text-blue-400 mt-1">Generating AI Summary...</p>}
         </div>
       </div>
       
