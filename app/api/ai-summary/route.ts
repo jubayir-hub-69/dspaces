@@ -1,6 +1,8 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { NextResponse } from 'next/server';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
@@ -13,7 +15,8 @@ export async function POST(req: Request) {
       });
     }
 
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = process.env.GEMINI_API_KEY?.trim();
+    
     if (!apiKey) {
       return NextResponse.json({ 
           success: false, 
@@ -35,7 +38,7 @@ export async function POST(req: Request) {
   } catch (error: any) {
     return NextResponse.json({ 
         success: false, 
-        error: error.message || "Failed to generate summary from Google Gemini." 
+        error: `Gemini Fetch Error: ${error.message || "Unknown error occurred"}` 
     });
   }
 }
