@@ -12,9 +12,13 @@
     "@dtelecom/components-react": "latest",
     "@dtelecom/components-styles": "latest",
     "@dtelecom/server-sdk-js": "latest",
+    "@google/generative-ai": "^0.1.0",
     "@solana/wallet-adapter-react": "^0.15.35",
     "@solana/wallet-adapter-react-ui": "^0.9.35",
+    "@vercel/kv": "^1.0.0",
+    "long": "^5.2.3",
     "next": "14.2.3",
+    "nodemailer": "^6.9.13",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
