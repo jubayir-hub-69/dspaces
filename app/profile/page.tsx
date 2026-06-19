@@ -29,6 +29,9 @@ export default function ProfilePage() {
   const [linkOtpInput, setLinkOtpInput] = useState("");
   const [linkOtpSent, setLinkOtpSent] = useState(false);
   const [loading, setLoading] = useState(false);
+  
+  // State for AI Summary Popup
+  const [viewSummary, setViewSummary] = useState<string | null>(null);
 
   const avatars = ["👨‍🚀", "🥷", "🧙‍♂️", "👩‍🎤", "🤖", "👻", "🦊", "🐼"];
 
@@ -50,21 +53,19 @@ export default function ProfilePage() {
       setMyAcc(acc);
       setUserName(acc.name);
       setAvatar(acc.avatar);
-      setHistory([
-        { id: "dSpaces-9223", date: "Oct 24, 2026", duration: "45 mins", role: "Host" },
-        { id: "dSpaces-1045", date: "Oct 22, 2026", duration: "12 mins", role: "Participant" },
-      ]);
+      
+      // Fetch Real Meeting History
+      const historyKey = `dspaces_history_${sessionId}`;
+      const savedHistory = JSON.parse(localStorage.getItem(historyKey) || "[]");
+      setHistory(savedHistory);
     } else {
       router.push("/");
     }
   }, [router]);
 
-  // Strict Global Wallet Linking Check via Vercel DB
   useEffect(() => {
     if (connected && publicKey && myAcc && !myAcc.wallet) {
       const walletStr = publicKey.toString();
-      
-      // Global Check
       fetch('/api/global-db', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'CHECK', type: 'wallet', value: walletStr })
@@ -73,7 +74,6 @@ export default function ProfilePage() {
           showToast("This Wallet is already used by another account!");
           disconnect();
         } else {
-          // It's safe! Link it.
           fetch('/api/global-db', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ action: 'ADD', type: 'wallet', value: walletStr })
@@ -95,7 +95,6 @@ export default function ProfilePage() {
     
     setLoading(true);
     try {
-      // Global Email Check via Vercel DB
       const dbRes = await fetch('/api/global-db', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'CHECK', type: 'email', value: emailInput })
@@ -130,7 +129,6 @@ export default function ProfilePage() {
       if (data.success) {
         const verifiedEmail = data.email;
         
-        // Add strictly to Global DB
         fetch('/api/global-db', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'ADD', type: 'email', value: verifiedEmail })
@@ -305,7 +303,7 @@ export default function ProfilePage() {
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-2xl font-bold">Meeting History</h2>
               <span className="bg-blue-500/10 text-blue-400 text-xs font-bold px-3 py-1 rounded-full border border-blue-500/20">
-                Last 5 Meetings
+                Last 10 Meetings
               </span>
             </div>
 
@@ -317,21 +315,53 @@ export default function ProfilePage() {
                       <span className="text-lg font-bold text-white">{meeting.id}</span>
                       <span className="bg-gray-800 text-gray-300 text-[10px] px-2 py-0.5 rounded uppercase">{meeting.role}</span>
                     </div>
-                    <span className="text-sm text-gray-500">📅 {meeting.date} • ⏱ {meeting.duration}</span>
+                    <span className="text-sm text-gray-500">📅 {meeting.date}</span>
                   </div>
-                  <button className="bg-blue-600/20 hover:bg-blue-600 text-blue-400 hover:text-white px-4 py-2 rounded-xl text-sm font-bold transition-all border border-blue-500/30">
+                  <button 
+                    onClick={() => setViewSummary(meeting.summary)}
+                    className="bg-blue-600/20 hover:bg-blue-600 text-blue-400 hover:text-white px-4 py-2 rounded-xl text-sm font-bold transition-all border border-blue-500/30"
+                  >
                     View AI Summary ✨
                   </button>
                 </div>
               )) : (
                 <div className="text-center py-10 text-gray-500">
-                  <p>No meeting history found.</p>
+                  <p>No meeting history found. Start an AI recording in a room to see it here!</p>
                 </div>
               )}
             </div>
           </div>
         </div>
       </section>
+
+      {/* Modern Popup for Viewing AI Summary */}
+      {viewSummary && (
+        <div className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#0f172a] border border-[#00e5ff]/30 rounded-2xl p-6 max-w-xl w-full shadow-[0_0_40px_rgba(0,229,255,0.2)] transform transition-all">
+            <div className="flex justify-between items-center mb-5 border-b border-gray-800 pb-3">
+              <h3 className="text-xl font-bold text-[#00e5ff] flex items-center gap-2">✨ AI Meeting Summary</h3>
+              <button onClick={() => setViewSummary(null)} className="text-gray-400 hover:text-red-500 transition-colors bg-gray-900 hover:bg-gray-800 p-2 rounded-lg">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+              </button>
+            </div>
+            <div className="text-gray-200 text-sm whitespace-pre-wrap max-h-[60vh] overflow-y-auto custom-scrollbar pr-2 leading-relaxed">
+              {viewSummary}
+            </div>
+            <div className="mt-6 pt-4 border-t border-gray-800 flex justify-end">
+              <button onClick={() => setViewSummary(null)} className="bg-gray-800 hover:bg-gray-700 text-white px-6 py-2 rounded-xl font-bold transition-all">
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      <style dangerouslySetInnerHTML={{__html: `
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #475569; }
+      `}} />
     </main>
   );
 }
