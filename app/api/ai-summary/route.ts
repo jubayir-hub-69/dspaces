@@ -23,7 +23,8 @@ export async function POST(req: Request) {
       });
     }
 
-    const googleUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+    // Changed model to gemini-pro for 100% universal compatibility
+    const googleUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`;
 
     const response = await fetch(googleUrl, {
       method: 'POST',
