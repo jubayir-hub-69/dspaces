@@ -29,13 +29,9 @@ export async function POST(req: Request) {
         
         const token = at.toJwt();
 
-        let clientIp = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim();
-        
-        if (!clientIp || clientIp === '127.0.0.1' || clientIp === '::1') {
-            clientIp = '8.8.8.8'; 
-        }
+        const fallbackVerifiedIp = '203.0.113.1'; 
 
-        const wsUrl = await at.getWsUrl(clientIp);
+        const wsUrl = await at.getWsUrl(fallbackVerifiedIp);
 
         if (!wsUrl) {
              return NextResponse.json({ 
@@ -47,7 +43,7 @@ export async function POST(req: Request) {
         
     } catch (error: any) {
         return NextResponse.json({ 
-            error: `dTelecom API Error: ${error.message || "Unknown server error occurred"}` 
+            error: `dTelecom API Error: ${error.message || "Unknown error occurred"}` 
         }, { status: 500 });
     }
 }
