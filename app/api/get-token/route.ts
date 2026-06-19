@@ -16,12 +16,10 @@ export async function POST(req: Request) {
             }, { status: 400 });
         }
 
-        // 1. Create Token
         const at = new AccessToken(apiKey, apiSecret, {
             identity: participantName,
         });
 
-        // 2. Add required grants (dTelecom strictly needs canPublish and canSubscribe)
         at.addGrant({ 
             roomJoin: true, 
             room: roomName,
@@ -31,21 +29,23 @@ export async function POST(req: Request) {
         
         const token = at.toJwt();
 
-        // 3. Get IP and fetch WebSocket URL
-        const clientIp = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || '127.0.0.1';
+        let clientIp = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim();
+        
+        if (!clientIp || clientIp === '127.0.0.1' || clientIp === '::1') {
+            clientIp = '8.8.8.8'; 
+        }
+
         const wsUrl = await at.getWsUrl(clientIp);
 
-        // If dTelecom server rejects or fails to return a URL
         if (!wsUrl) {
              return NextResponse.json({ 
-                 error: "dTelecom server did not return a valid WebSocket URL. Please check your dTelecom dashboard limits." 
+                 error: "dTelecom routing failed. The server could not assign a video node for the given IP." 
              }, { status: 500 });
         }
 
         return NextResponse.json({ token, url: wsUrl });
         
     } catch (error: any) {
-        // This will print the exact server error on your screen
         return NextResponse.json({ 
             error: `dTelecom API Error: ${error.message || "Unknown server error occurred"}` 
         }, { status: 500 });
