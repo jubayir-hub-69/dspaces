@@ -1,4 +1,3 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
@@ -11,7 +10,7 @@ export async function POST(req: Request) {
     if (!transcript || transcript.trim() === '') {
       return NextResponse.json({ 
           success: false, 
-          error: "No conversation detected. Please speak into the microphone first." 
+          error: "No conversation detected. Please speak clearly into the microphone." 
       });
     }
 
@@ -20,25 +19,44 @@ export async function POST(req: Request) {
     if (!apiKey) {
       return NextResponse.json({ 
           success: false, 
-          error: "Gemini API Key is missing in Vercel." 
+          error: "GEMINI_API_KEY is missing in your Vercel Environment Variables." 
       });
     }
 
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    const googleUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 
-    const prompt = `Please provide a clear, professional, and concise summary of the following meeting transcript:\n\n${transcript}`;
-    
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const summaryText = response.text();
+    const response = await fetch(googleUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: `Please provide a professional and concise summary of this meeting transcript:\n\n${transcript}` }] }]
+      })
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      return NextResponse.json({ 
+          success: false, 
+          error: `${data.error?.message || response.statusText}` 
+      });
+    }
+
+    const summaryText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+
+    if (!summaryText) {
+      return NextResponse.json({ 
+          success: false, 
+          error: "Google returned an empty response. Please try again." 
+      });
+    }
 
     return NextResponse.json({ success: true, summary: summaryText });
     
   } catch (error: any) {
     return NextResponse.json({ 
         success: false, 
-        error: `Gemini Fetch Error: ${error.message || "Unknown error occurred"}` 
+        error: `Server Crash: ${error.message || "Unknown error occurred"}` 
     });
   }
 }
