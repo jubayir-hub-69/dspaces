@@ -1,4 +1,4 @@
-import { AccessToken } from 'livekit-server-sdk';
+import { AccessToken } from '@dtelecom/server-sdk-js';
 import { NextResponse } from 'next/server';
 
 export async function POST(req: Request) {
@@ -7,13 +7,12 @@ export async function POST(req: Request) {
         const roomName = body.room || "dSpaces-Room";
         const participantName = body.username || "Guest";
 
-        const apiKey = process.env.LIVEKIT_API_KEY || process.env.DTELECOM_API_KEY;
-        const apiSecret = process.env.LIVEKIT_API_SECRET || process.env.DTELECOM_API_SECRET;
-        const wsUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL || process.env.NEXT_PUBLIC_DTELECOM_URL;
+        const apiKey = process.env.DTELECOM_API_KEY;
+        const apiSecret = process.env.DTELECOM_API_SECRET;
 
-        if (!apiKey || !apiSecret || !wsUrl) {
+        if (!apiKey || !apiSecret) {
             return NextResponse.json({ 
-                error: "Missing API Key or WebSocket URL in Vercel Environment Variables. Please check your Vercel settings." 
+                error: "Missing API Key or Secret in Vercel. Please check Environment Variables." 
             }, { status: 500 });
         }
 
@@ -22,10 +21,14 @@ export async function POST(req: Request) {
         });
 
         at.addGrant({ roomJoin: true, room: roomName });
-        const token = await at.toJwt();
+        
+        const token = at.toJwt();
+
+        const clientIp = req.headers.get('x-forwarded-for')?.split(',')[0] || '127.0.0.1';
+        const wsUrl = await at.getWsUrl(clientIp);
 
         return NextResponse.json({ token, url: wsUrl });
     } catch (error: any) {
-        return NextResponse.json({ error: error.message || "Failed to generate connection token" }, { status: 500 });
+        return NextResponse.json({ error: error.message || "Failed to generate token" }, { status: 500 });
     }
 }
