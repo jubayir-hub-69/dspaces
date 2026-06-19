@@ -1,4 +1,3 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
@@ -23,23 +22,75 @@ export async function POST(req: Request) {
       });
     }
 
-    const genAI = new GoogleGenerativeAI(apiKey);
-    
-    // CRITICAL FIX: Using the latest supported model for the updated package
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    // Step 1: Auto-discover available models for this specific API Key
+    const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
+    const listRes = await fetch(listUrl);
+    const listData = await listRes.json();
 
-    const prompt = `Please provide a professional and concise summary of this meeting transcript:\n\n${transcript}`;
-    
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
+    if (!listRes.ok) {
+       return NextResponse.json({ 
+          success: false, 
+          error: `API Key Error: ${listData.error?.message || 'Could not verify API Key'}` 
+       });
+    }
 
-    return NextResponse.json({ success: true, summary: text });
+    const models = listData.models || [];
+    
+    // Find models that support text generation
+    const validModels = models.filter((m: any) => 
+        m.supportedGenerationMethods?.includes("generateContent") && 
+        m.name.includes("gemini")
+    );
+
+    if (validModels.length === 0) {
+        return NextResponse.json({ 
+            success: false, 
+            error: "Your Google Account/API Key does not have access to any Gemini text models." 
+        });
+    }
+
+    // Auto-select the best available model (Flash > Pro > Anything else)
+    const flashModel = validModels.find((m: any) => m.name.includes("1.5-flash"));
+    const proModel = validModels.find((m: any) => m.name.includes("1.5-pro"));
+    const backupModel = validModels[0];
+
+    const selectedModel = (flashModel || proModel || backupModel).name;
+
+    // Step 2: Generate the summary using the auto-discovered model
+    const generateUrl = `https://generativelanguage.googleapis.com/v1beta/${selectedModel}:generateContent?key=${apiKey}`;
+
+    const generateRes = await fetch(generateUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: `Please provide a professional and concise summary of this meeting transcript:\n\n${transcript}` }] }]
+      })
+    });
+
+    const genData = await generateRes.json();
+
+    if (!generateRes.ok) {
+      return NextResponse.json({ 
+          success: false, 
+          error: `Generation failed on ${selectedModel}: ${genData.error?.message || 'Unknown error'}` 
+      });
+    }
+
+    const summaryText = genData.candidates?.[0]?.content?.parts?.[0]?.text;
+
+    if (!summaryText) {
+      return NextResponse.json({ 
+          success: false, 
+          error: "Google returned an empty summary." 
+      });
+    }
+
+    return NextResponse.json({ success: true, summary: summaryText });
     
   } catch (error: any) {
     return NextResponse.json({ 
         success: false, 
-        error: `Google API Error: ${error.message || "Unknown error occurred"}` 
+        error: `Server Crash: ${error.message || "Unknown error occurred"}` 
     });
   }
 }
