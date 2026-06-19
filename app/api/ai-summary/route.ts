@@ -1,3 +1,4 @@
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
@@ -15,7 +16,6 @@ export async function POST(req: Request) {
     }
 
     const apiKey = process.env.GEMINI_API_KEY?.trim();
-    
     if (!apiKey) {
       return NextResponse.json({ 
           success: false, 
@@ -23,41 +23,21 @@ export async function POST(req: Request) {
       });
     }
 
-    // Changed model to gemini-pro for 100% universal compatibility
-    const googleUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`;
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
 
-    const response = await fetch(googleUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: `Please provide a professional and concise summary of this meeting transcript:\n\n${transcript}` }] }]
-      })
-    });
+    const prompt = `Please provide a professional and concise summary of this meeting transcript:\n\n${transcript}`;
+    
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const text = response.text();
 
-    const data = await response.json();
-
-    if (!response.ok) {
-      return NextResponse.json({ 
-          success: false, 
-          error: `${data.error?.message || response.statusText}` 
-      });
-    }
-
-    const summaryText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-
-    if (!summaryText) {
-      return NextResponse.json({ 
-          success: false, 
-          error: "Google returned an empty response. Please try again." 
-      });
-    }
-
-    return NextResponse.json({ success: true, summary: summaryText });
+    return NextResponse.json({ success: true, summary: text });
     
   } catch (error: any) {
     return NextResponse.json({ 
         success: false, 
-        error: `Server Crash: ${error.message || "Unknown error occurred"}` 
+        error: `Google API Error: ${error.message || "Unknown error occurred"}` 
     });
   }
 }
