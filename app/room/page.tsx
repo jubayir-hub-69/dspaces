@@ -9,8 +9,11 @@ function RoomContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const roomId = searchParams.get("id") || "dSpaces-Room";
-  const userName = searchParams.get("name") || "Guest";
+  const rawUserName = searchParams.get("name") || "Guest";
   const isHost = searchParams.get("ishost") === "true";
+  
+  // DMeet Style: Append (Host) directly to the name on the video tile
+  const userName = isHost ? `${rawUserName} (Host)` : rawUserName;
 
   const [token, setToken] = useState("");
   const [serverUrl, setServerUrl] = useState("");
@@ -21,6 +24,10 @@ function RoomContent() {
   const [summary, setSummary] = useState("");
   const [loadingAI, setLoadingAI] = useState(false);
   const recognitionRef = useRef<any>(null);
+
+  // New UI States for DMeet-like experience
+  const [showToast, setShowToast] = useState(false);
+  const [isAIPanelOpen, setIsAIPanelOpen] = useState(false);
 
   useEffect(() => {
     const fetchToken = async () => {
@@ -45,10 +52,12 @@ function RoomContent() {
     fetchToken();
   }, [roomId, userName]);
 
+  // DMeet Style Modern Popup Notification
   const copyInviteLink = () => {
     const inviteLink = `${window.location.origin}/room?id=${roomId}`;
     navigator.clipboard.writeText(inviteLink);
-    alert("Invite link copied to clipboard! Share it with your friends.");
+    setShowToast(true);
+    setTimeout(() => setShowToast(false), 3000);
   };
 
   const handleStartAI = () => {
@@ -90,7 +99,7 @@ function RoomContent() {
       
       if (!res.ok) {
         const errText = await res.text();
-        setSummary(`❌ Vercel Server Error (${res.status}): ${errText.substring(0, 100)}`);
+        setSummary(`❌ Server Error (${res.status}): ${errText.substring(0, 100)}`);
         setLoadingAI(false);
         return;
       }
@@ -104,7 +113,7 @@ function RoomContent() {
       }
     } catch (e: any) {
       if (e.message.includes("Failed to fetch")) {
-        setSummary("❌ Network Error: 'Failed to fetch'. Your browser blocked the request or your internet dropped. Please check your Wi-Fi or turn off AdBlockers.");
+        setSummary("❌ Network Error: 'Failed to fetch'. Check your connection or Adblocker.");
       } else {
         setSummary(`❌ Crash: ${e.message}`);
       }
@@ -132,80 +141,98 @@ function RoomContent() {
   }
 
   return (
-    <div className="flex flex-col lg:flex-row h-[100dvh] bg-[#030712] overflow-hidden font-sans">
+    <div className="relative h-[100dvh] w-full bg-[#030712] overflow-hidden font-sans flex flex-col">
       
-      <div className="flex-1 flex flex-col min-h-0 relative shadow-2xl">
-        
-        <div className="flex-none px-6 py-4 bg-gray-950/90 border-b border-gray-800 flex justify-between items-center z-10">
-          <div className="flex items-center gap-3">
-            <h1 className="text-white text-lg font-bold truncate max-w-[150px] sm:max-w-xs">Room: {roomId}</h1>
-            {isHost && (
-              <span className="bg-blue-600 text-white px-2 py-1 rounded text-xs font-bold uppercase tracking-wider">
-                Host
-              </span>
-            )}
-          </div>
-          <button onClick={copyInviteLink} className="bg-gray-800 hover:bg-gray-700 text-white px-3 sm:px-4 py-2 rounded-lg text-sm font-semibold transition-all border border-gray-700 flex items-center gap-2 flex-shrink-0">
+      {/* Modern Toast Notification */}
+      <div className={`absolute top-6 left-1/2 transform -translate-x-1/2 z-[100] bg-gray-800 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 border border-gray-700 transition-all duration-300 ${showToast ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-10 pointer-events-none'}`}>
+        <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg>
+        <span className="font-medium text-sm">Invite link copied to clipboard!</span>
+      </div>
+
+      {/* Main Video Area */}
+      <div className="absolute inset-0 flex flex-col w-full h-full">
+        {/* Top Header Bar */}
+        <div className="flex-none px-6 py-4 bg-gray-950/80 backdrop-blur-md border-b border-gray-800 flex justify-between items-center z-40">
+          <h1 className="text-white text-base lg:text-lg font-bold truncate max-w-[200px] sm:max-w-xs">Room: {roomId}</h1>
+          <button onClick={copyInviteLink} className="bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all border border-gray-700 flex items-center gap-2">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
             <span className="hidden sm:inline">Copy Invite Link</span>
             <span className="sm:hidden">Copy</span>
           </button>
         </div>
 
-        <div className="flex-1 min-h-0 relative bg-black">
-          <div className="absolute inset-0">
-            <LiveKitRoom
-              video={true}
-              audio={true}
-              token={token}
-              serverUrl={serverUrl}
-              data-lk-theme="default"
-              style={{ height: '100%', width: '100%' }}
-              onDisconnected={() => router.push("/")}
-            >
-              <VideoConference />
-              <RoomAudioRenderer />
-            </LiveKitRoom>
-          </div>
+        {/* Video Conference Container */}
+        <div className="flex-1 relative bg-black w-full h-full">
+          <LiveKitRoom
+            video={true}
+            audio={true}
+            token={token}
+            serverUrl={serverUrl}
+            data-lk-theme="default"
+            style={{ height: '100%', width: '100%' }}
+            onDisconnected={() => router.push("/")}
+          >
+            <VideoConference />
+            <RoomAudioRenderer />
+          </LiveKitRoom>
         </div>
       </div>
 
-      <div className="w-full lg:w-[400px] h-[40vh] lg:h-full bg-gray-950 border-t lg:border-t-0 lg:border-l border-gray-800 flex flex-col p-5 text-white z-50 flex-shrink-0">
-        <h2 className="text-xl lg:text-2xl font-extrabold text-blue-400 mb-4 flex items-center gap-2 flex-shrink-0">
-          AI Meeting Assistant
-        </h2>
+      {/* DMeet Style Floating Ask AI Button */}
+      {!isAIPanelOpen && (
+        <button 
+          onClick={() => setIsAIPanelOpen(true)} 
+          className="absolute bottom-24 right-4 sm:right-8 z-50 bg-gray-900 hover:bg-gray-800 text-white px-5 py-3 rounded-full shadow-[0_0_20px_rgba(0,0,0,0.6)] border border-gray-700 font-bold flex items-center gap-2 transition-transform hover:scale-105"
+        >
+          <span>✨</span> Ask AI
+        </button>
+      )}
 
-        <div className="flex-1 min-h-0 overflow-y-auto bg-black/60 rounded-2xl p-4 mb-4 border border-gray-800 custom-scrollbar relative">
-          <h3 className="text-xs text-gray-500 font-bold uppercase tracking-widest mb-2 absolute top-2 bg-black px-2">Live Transcript</h3>
-          <div className="mt-6">
-            {transcript ? (
-              <p className="text-gray-300 text-sm leading-relaxed italic">"{transcript}"</p>
-            ) : (
-              <p className="text-center text-sm text-gray-600 mt-4">Start recording to see live conversation...</p>
-            )}
-          </div>
+      {/* DMeet Style Sliding AI Panel / Drawer */}
+      <div className={`absolute right-0 top-0 h-full w-full sm:w-[400px] bg-gray-950 z-[60] shadow-[-10px_0_30px_rgba(0,0,0,0.8)] border-l border-gray-800 flex flex-col transform transition-transform duration-300 ease-in-out ${isAIPanelOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+        
+        {/* Drawer Header */}
+        <div className="flex items-center justify-between p-5 border-b border-gray-800 bg-gray-950">
+          <h2 className="text-xl font-extrabold text-blue-400 flex items-center gap-2">✨ AI Assistant</h2>
+          <button onClick={() => setIsAIPanelOpen(false)} className="text-gray-400 hover:text-white p-2 bg-gray-900 rounded-lg hover:bg-gray-800 transition-colors">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+          </button>
         </div>
 
-        {summary && (
-          <div className="flex-1 min-h-0 overflow-y-auto bg-blue-900/10 border border-blue-500/30 rounded-2xl p-4 mb-4 custom-scrollbar">
-            <h3 className="font-bold text-blue-400 mb-2 text-sm">AI Generated Summary</h3>
-            <div className={`text-sm whitespace-pre-wrap leading-relaxed ${summary.startsWith('❌') ? 'text-red-400 font-medium' : 'text-gray-200'}`}>
-              {summary}
+        {/* AI Content Body */}
+        <div className="flex-1 overflow-hidden flex flex-col p-5">
+          <div className="flex-1 min-h-0 overflow-y-auto bg-black/60 rounded-2xl p-4 mb-4 border border-gray-800 custom-scrollbar relative">
+            <h3 className="text-xs text-gray-500 font-bold uppercase tracking-widest mb-2 absolute top-2 bg-black px-2">Live Transcript</h3>
+            <div className="mt-6">
+              {transcript ? (
+                <p className="text-gray-300 text-sm leading-relaxed italic">"{transcript}"</p>
+              ) : (
+                <p className="text-center text-sm text-gray-600 mt-4">Start recording to see live conversation...</p>
+              )}
             </div>
           </div>
-        )}
 
-        <div className="flex flex-col gap-2 mt-auto flex-shrink-0">
-          {!isRecording ? (
-            <button onClick={handleStartAI} className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-3 rounded-xl transition-all text-sm">
-              Start AI Recording
-            </button>
-          ) : (
-            <button onClick={handleStopAI} className="w-full bg-red-600 hover:bg-red-500 text-white font-bold py-3 rounded-xl transition-all text-sm">
-              Stop & Generate Summary
-            </button>
+          {summary && (
+            <div className="flex-1 min-h-0 overflow-y-auto bg-blue-900/10 border border-blue-500/30 rounded-2xl p-4 mb-4 custom-scrollbar">
+              <h3 className="font-bold text-blue-400 mb-2 text-sm">AI Generated Summary</h3>
+              <div className={`text-sm whitespace-pre-wrap leading-relaxed ${summary.startsWith('❌') ? 'text-red-400 font-medium' : 'text-gray-200'}`}>
+                {summary}
+              </div>
+            </div>
           )}
-          {loadingAI && <p className="text-center text-xs text-blue-400 mt-1">Generating AI Summary...</p>}
+
+          <div className="flex flex-col gap-2 mt-auto flex-shrink-0 pt-2">
+            {!isRecording ? (
+              <button onClick={handleStartAI} className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-3 rounded-xl transition-all text-sm shadow-lg">
+                Start AI Recording
+              </button>
+            ) : (
+              <button onClick={handleStopAI} className="w-full bg-red-600 hover:bg-red-500 text-white font-bold py-3 rounded-xl transition-all text-sm shadow-lg flex items-center justify-center gap-2">
+                <span className="w-2 h-2 bg-white rounded-full animate-pulse"></span> Stop & Generate Summary
+              </button>
+            )}
+            {loadingAI && <p className="text-center text-xs text-blue-400 mt-2 font-medium animate-pulse">Generating AI Summary...</p>}
+          </div>
         </div>
       </div>
       
@@ -223,7 +250,7 @@ export default function RoomPage() {
     <Suspense fallback={
       <div className="flex flex-col items-center justify-center h-screen bg-[#030712] text-white">
         <div className="animate-spin rounded-full h-14 w-14 border-t-4 border-b-4 border-blue-500 mb-6"></div>
-        <p className="text-lg font-semibold animate-pulse text-blue-400">Loading...</p>
+        <p className="text-lg font-semibold animate-pulse text-blue-400">Loading secure room...</p>
       </div>
     }>
       <RoomContent />
