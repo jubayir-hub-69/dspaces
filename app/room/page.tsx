@@ -10,6 +10,7 @@ function RoomContent() {
   const router = useRouter();
   const roomId = searchParams.get("id") || "dSpaces-Room";
   const userName = searchParams.get("name") || "Guest";
+  const isHost = searchParams.get("ishost") === "true";
 
   const [token, setToken] = useState("");
   const [serverUrl, setServerUrl] = useState("");
@@ -43,6 +44,12 @@ function RoomContent() {
     };
     fetchToken();
   }, [roomId, userName]);
+
+  const copyInviteLink = () => {
+    const inviteLink = `${window.location.origin}/room?id=${roomId}`;
+    navigator.clipboard.writeText(inviteLink);
+    alert("Invite link copied to clipboard! Share it with your friends.");
+  };
 
   const handleStartAI = () => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -95,7 +102,7 @@ function RoomContent() {
   if (errorMsg) {
     return (
       <div className="flex flex-col items-center justify-center h-screen bg-gray-900 text-white text-center p-6">
-        <h1 className="text-3xl text-red-500 font-bold mb-4">⚠️ Connection Error</h1>
+        <h1 className="text-3xl text-red-500 font-bold mb-4">Connection Error</h1>
         <p className="text-gray-300 text-lg">{errorMsg}</p>
         <button onClick={() => router.push("/")} className="mt-8 px-8 py-3 bg-blue-600 hover:bg-blue-500 rounded-xl font-bold transition-all">Go Back Home</button>
       </div>
@@ -113,19 +120,38 @@ function RoomContent() {
 
   return (
     <div className="flex flex-col lg:flex-row h-screen bg-[#030712] overflow-hidden font-sans">
-      <div className="flex-1 relative shadow-2xl">
-        <LiveKitRoom
-          video={true}
-          audio={true}
-          token={token}
-          serverUrl={serverUrl}
-          data-lk-theme="default"
-          style={{ height: '100vh', backgroundColor: '#000' }}
-          onDisconnected={() => router.push("/profile")}
-        >
-          <VideoConference />
-          <RoomAudioRenderer />
-        </LiveKitRoom>
+      
+      <div className="flex-1 flex flex-col relative shadow-2xl">
+        
+        <div className="px-6 py-4 bg-gray-950/90 border-b border-gray-800 flex justify-between items-center z-10">
+          <div className="flex items-center gap-3">
+            <h1 className="text-white text-lg font-bold">Room: {roomId}</h1>
+            {isHost && (
+              <span className="bg-blue-600 text-white px-2 py-1 rounded text-xs font-bold uppercase tracking-wider">
+                Host
+              </span>
+            )}
+          </div>
+          <button onClick={copyInviteLink} className="bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all border border-gray-700 flex items-center gap-2">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
+            Copy Invite Link
+          </button>
+        </div>
+
+        <div className="flex-1 relative">
+          <LiveKitRoom
+            video={true}
+            audio={true}
+            token={token}
+            serverUrl={serverUrl}
+            data-lk-theme="default"
+            style={{ height: '100%', backgroundColor: '#000' }}
+            onDisconnected={() => router.push("/profile")}
+          >
+            <VideoConference />
+            <RoomAudioRenderer />
+          </LiveKitRoom>
+        </div>
       </div>
 
       <div className="w-full lg:w-[400px] bg-gray-950 border-l border-gray-800 flex flex-col p-5 text-white z-50">
@@ -161,7 +187,7 @@ function RoomContent() {
               Stop & Generate Summary
             </button>
           )}
-          {loadingAI && <p className="text-center text-sm text-blue-400 mt-2">Generating...</p>}
+          {loadingAI && <p className="text-center text-sm text-blue-400 mt-2">Generating AI Summary...</p>}
         </div>
       </div>
       
