@@ -12,8 +12,8 @@ export async function POST(req: Request) {
 
         if (!apiKey || !apiSecret) {
             return NextResponse.json({ 
-                error: "Missing API Key or Secret in Vercel." 
-            }, { status: 400 });
+                error: "Missing DTELECOM API keys in environment variables." 
+            }, { status: 500 });
         }
 
         const at = new AccessToken(apiKey, apiSecret, {
@@ -30,15 +30,16 @@ export async function POST(req: Request) {
         const token = at.toJwt();
 
         let clientIp = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim();
+        
         if (!clientIp || clientIp === '127.0.0.1' || clientIp === '::1') {
-            clientIp = '1.1.1.1'; 
+            clientIp = '8.8.8.8'; 
         }
 
         const wsUrl = await at.getWsUrl(clientIp);
 
         if (!wsUrl) {
              return NextResponse.json({ 
-                 error: "dTelecom routing failed. The server could not assign a video node for the given IP." 
+                 error: "dTelecom server could not assign a video node right now. Please try again later." 
              }, { status: 500 });
         }
 
@@ -46,7 +47,7 @@ export async function POST(req: Request) {
         
     } catch (error: any) {
         return NextResponse.json({ 
-            error: `Server Error: ${error.message || "Unknown error"}` 
+            error: `dTelecom API Error: ${error.message || "Unknown error"}` 
         }, { status: 500 });
     }
 }
