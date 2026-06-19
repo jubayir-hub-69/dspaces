@@ -79,6 +79,7 @@ function RoomContent() {
     if (recognitionRef.current) recognitionRef.current.stop();
     setIsRecording(false);
     setLoadingAI(true);
+    setSummary(""); // Clear previous summary or errors
 
     try {
       const res = await fetch("/api/ai-summary", {
@@ -91,10 +92,11 @@ function RoomContent() {
       if (data.success) {
         setSummary(data.summary);
       } else {
-        setSummary("Failed to generate summary.");
+        // Now it will show the ACTUAL error from Google directly on screen
+        setSummary(`❌ Error: ${data.error}`);
       }
-    } catch (e) {
-      setSummary("Server error during AI generation.");
+    } catch (e: any) {
+      setSummary(`❌ Request Failed: ${e.message}`);
     }
     setLoadingAI(false);
   };
@@ -176,7 +178,9 @@ function RoomContent() {
         {summary && (
           <div className="flex-1 min-h-0 overflow-y-auto bg-blue-900/10 border border-blue-500/30 rounded-2xl p-4 mb-4 custom-scrollbar">
             <h3 className="font-bold text-blue-400 mb-2 text-sm">AI Generated Summary</h3>
-            <div className="text-sm text-gray-200 whitespace-pre-wrap leading-relaxed">{summary}</div>
+            <div className={`text-sm whitespace-pre-wrap leading-relaxed ${summary.startsWith('❌') ? 'text-red-400 font-medium' : 'text-gray-200'}`}>
+              {summary}
+            </div>
           </div>
         )}
 
