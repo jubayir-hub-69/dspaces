@@ -24,7 +24,9 @@ export async function POST(req: Request) {
     }
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
+    
+    // CRITICAL FIX: Using the latest supported model for the updated package
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
     const prompt = `Please provide a professional and concise summary of this meeting transcript:\n\n${transcript}`;
     
