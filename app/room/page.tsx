@@ -79,7 +79,7 @@ function RoomContent() {
     if (recognitionRef.current) recognitionRef.current.stop();
     setIsRecording(false);
     setLoadingAI(true);
-    setSummary(""); // Clear previous summary or errors
+    setSummary("");
 
     try {
       const res = await fetch("/api/ai-summary", {
@@ -87,16 +87,27 @@ function RoomContent() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ transcript }),
       });
+      
+      if (!res.ok) {
+        const errText = await res.text();
+        setSummary(`❌ Vercel Server Error (${res.status}): ${errText.substring(0, 100)}`);
+        setLoadingAI(false);
+        return;
+      }
+
       const data = await res.json();
       
       if (data.success) {
         setSummary(data.summary);
       } else {
-        // Now it will show the ACTUAL error from Google directly on screen
-        setSummary(`❌ Error: ${data.error}`);
+        setSummary(`❌ AI Error: ${data.error}`);
       }
     } catch (e: any) {
-      setSummary(`❌ Request Failed: ${e.message}`);
+      if (e.message.includes("Failed to fetch")) {
+        setSummary("❌ Network Error: 'Failed to fetch'. Your browser blocked the request or your internet dropped. Please check your Wi-Fi or turn off AdBlockers.");
+      } else {
+        setSummary(`❌ Crash: ${e.message}`);
+      }
     }
     setLoadingAI(false);
   };
