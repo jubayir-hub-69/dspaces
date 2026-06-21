@@ -10,7 +10,6 @@ interface ChatMessage {
   text: string;
 }
 
-// Map languages to Speech Recognition Locales
 const languageMap: Record<string, string> = {
   "English": "en-US",
   "Bengali": "bn-BD",
@@ -44,9 +43,7 @@ function RoomContent() {
   const [showToast, setShowToast] = useState(false);
   const [isAIPanelOpen, setIsAIPanelOpen] = useState(false);
 
-  // NEW: AI Language State
   const [aiLanguage, setAiLanguage] = useState("English");
-
   const [aiChatInput, setAiChatInput] = useState("");
   const [aiChatHistory, setAiChatHistory] = useState<ChatMessage[]>([]);
   const [loadingChat, setLoadingChat] = useState(false);
@@ -95,6 +92,7 @@ function RoomContent() {
     setSummary("");
   };
 
+  // --- SMART & SAFE MIC LOGIC ---
   const handleStartAI = () => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
@@ -105,8 +103,6 @@ function RoomContent() {
     const recognition = new SpeechRecognition();
     recognition.continuous = true;
     recognition.interimResults = true;
-    
-    // NEW: Use the selected language for voice recognition
     recognition.lang = languageMap[aiLanguage] || "en-US"; 
 
     recognition.onresult = (event: any) => {
@@ -128,20 +124,37 @@ function RoomContent() {
       setTranscript(fullTranscriptRef.current + interimText);
     };
 
+    // ADVANCED WAKEUP: Using setTimeout to bypass browser spam-blocking
     recognition.onend = () => {
       if (isRecordingRef.current) {
-        try { recognition.start(); } catch (e) { console.log(e); }
+        setTimeout(() => {
+          try { 
+            recognition.start(); 
+          } catch (e) { 
+            console.log("Mic restart blocked by browser."); 
+          }
+        }, 350); // 350ms delay is the magic number to trick the browser
       }
     };
 
     recognition.onerror = (event: any) => {
-      if (event.error === 'no-speech') return; 
+      // If hardware conflict happens (Mobile issue), gracefully stop
+      if (event.error === 'audio-capture' || event.error === 'not-allowed') {
+        isRecordingRef.current = false;
+        setIsRecording(false);
+        alert("Microphone conflict detected. On mobile, please try tapping 'Start' again or ensure no other app is using the mic.");
+      }
+      // 'no-speech' error will naturally trigger 'onend' and restart after 350ms
     };
 
-    recognition.start();
-    setIsRecording(true);
-    isRecordingRef.current = true;
-    recognitionRef.current = recognition;
+    try {
+      recognition.start();
+      setIsRecording(true);
+      isRecordingRef.current = true;
+      recognitionRef.current = recognition;
+    } catch(e) {
+      alert("Failed to start microphone. Please ensure permissions are granted.");
+    }
   };
 
   const handleStopAI = async () => {
@@ -155,7 +168,6 @@ function RoomContent() {
       const res = await fetch("/api/ai-summary", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // NEW: Pass selected language to backend
         body: JSON.stringify({ transcript: fullTranscriptRef.current || transcript, language: aiLanguage }),
       });
       
@@ -205,7 +217,6 @@ function RoomContent() {
       const res = await fetch("/api/ai-chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // NEW: Pass selected language to backend chat
         body: JSON.stringify({ transcript: fullTranscriptRef.current || transcript, question: query, language: aiLanguage }),
       });
       const data = await res.json();
@@ -292,7 +303,6 @@ function RoomContent() {
           <h2 className="text-lg font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-[#00e5ff] to-[#00ff88] flex items-center gap-2">✨ AI Assistant</h2>
           
           <div className="flex items-center gap-3">
-            {/* NEW: AI Translator Dropdown */}
             <select 
               value={aiLanguage}
               onChange={(e) => setAiLanguage(e.target.value)}
