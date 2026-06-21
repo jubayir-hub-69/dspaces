@@ -28,7 +28,6 @@ function RoomContent() {
   const [summary, setSummary] = useState("");
   const [loadingAI, setLoadingAI] = useState(false);
   
-  // NEW: Refs to keep mic alive and save text safely across pauses
   const recognitionRef = useRef<any>(null);
   const isRecordingRef = useRef(false);
   const fullTranscriptRef = useRef("");
@@ -77,7 +76,14 @@ function RoomContent() {
     setTimeout(() => setShowToast(false), 3000);
   };
 
-  // --- SMART MIC LOGIC START ---
+  // NEW: Function to clear transcript and chat
+  const handleClearTranscript = () => {
+    setTranscript("");
+    fullTranscriptRef.current = "";
+    setAiChatHistory([]);
+    setSummary("");
+  };
+
   const handleStartAI = () => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
@@ -102,23 +108,19 @@ function RoomContent() {
         }
       }
 
-      // Safely append only finalized sentences
       if (finalAdded) {
         fullTranscriptRef.current += finalAdded;
       }
       
-      // Update screen with full history + current speaking words
       setTranscript(fullTranscriptRef.current + interimText);
     };
 
-    // Auto-Wakeup mechanism: Restarts mic automatically if user didn't click Stop
     recognition.onend = () => {
       if (isRecordingRef.current) {
         try { recognition.start(); } catch (e) { console.log(e); }
       }
     };
 
-    // Ignore silence errors so it can restart smoothly
     recognition.onerror = (event: any) => {
       if (event.error === 'no-speech') return; 
     };
@@ -130,7 +132,7 @@ function RoomContent() {
   };
 
   const handleStopAI = async () => {
-    isRecordingRef.current = false; // Stop the auto-wakeup
+    isRecordingRef.current = false;
     if (recognitionRef.current) recognitionRef.current.stop();
     setIsRecording(false);
     setLoadingAI(true);
@@ -175,7 +177,6 @@ function RoomContent() {
     }
     setLoadingAI(false);
   };
-  // --- SMART MIC LOGIC END ---
 
   const handleSendAiQuestion = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -284,7 +285,16 @@ function RoomContent() {
           <div className="flex-1 overflow-y-auto pr-1 space-y-3 custom-scrollbar min-h-0 pb-2">
             
             <div className="bg-black/40 rounded-xl p-3.5 border border-gray-800/60 relative">
-              <h3 className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-1">Live Transcript</h3>
+              <div className="flex justify-between items-center mb-1">
+                <h3 className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Live Transcript</h3>
+                {/* NEW: Clear Transcript Button */}
+                {(transcript || aiChatHistory.length > 0) && (
+                  <button onClick={handleClearTranscript} className="text-gray-400 hover:text-red-400 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 transition-colors">
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                    Clear
+                  </button>
+                )}
+              </div>
               {transcript ? (
                 <p className="text-gray-300 text-xs leading-relaxed italic">"{transcript}"</p>
               ) : (
