@@ -22,7 +22,7 @@ export async function POST(req: Request) {
       });
     }
 
-    // Step 1: Auto-discover available models for this specific API Key
+    // Auto-discover the best available model
     const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
     const listRes = await fetch(listUrl);
     const listData = await listRes.json();
@@ -35,8 +35,6 @@ export async function POST(req: Request) {
     }
 
     const models = listData.models || [];
-    
-    // Find models that support text generation
     const validModels = models.filter((m: any) => 
         m.supportedGenerationMethods?.includes("generateContent") && 
         m.name.includes("gemini")
@@ -49,21 +47,40 @@ export async function POST(req: Request) {
         });
     }
 
-    // Auto-select the best available model (Flash > Pro > Anything else)
     const flashModel = validModels.find((m: any) => m.name.includes("1.5-flash"));
     const proModel = validModels.find((m: any) => m.name.includes("1.5-pro"));
     const backupModel = validModels[0];
 
     const selectedModel = (flashModel || proModel || backupModel).name;
 
-    // Step 2: Generate the summary using the auto-discovered model
     const generateUrl = `https://generativelanguage.googleapis.com/v1beta/${selectedModel}:generateContent?key=${apiKey}`;
+
+    // --- NEW: ADVANCED PROMPT FOR AUTO-CORRECTION AND PROFESSIONAL FORMATTING ---
+    const prompt = `You are a highly advanced Executive AI Meeting Assistant. You have been given a raw voice-to-text transcript of a meeting. 
+    
+    Important Instructions:
+    1. The transcript may contain mispronunciations, grammatical errors, broken words, or stuttering. You must completely ignore these errors, understand the true underlying context, and auto-correct the meaning.
+    2. Never point out the mistakes. Just provide a flawless, grammatically perfect English output.
+    3. Structure your response highly professionally using the exact format below (use markdown):
+    
+    ✨ **Executive Summary:** 
+    (A clear, flawlessly written paragraph summarizing the core discussion)
+    
+    📌 **Key Highlights:** 
+    (Brief bullet points of the most important topics covered)
+    
+    🎯 **Action Items / To-Do:** 
+    (Any decisions made or tasks assigned. If none, simply write "No specific action items were discussed.")
+    
+    [Raw Meeting Transcript]:
+    "${transcript}"`;
+    // -----------------------------------------------------------------------------
 
     const generateRes = await fetch(generateUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: `Please provide a professional and concise summary of this meeting transcript:\n\n${transcript}` }] }]
+        contents: [{ parts: [{ text: prompt }] }]
       })
     });
 
