@@ -27,12 +27,15 @@ function RoomContent() {
   const [transcript, setTranscript] = useState("");
   const [summary, setSummary] = useState("");
   const [loadingAI, setLoadingAI] = useState(false);
+  
+  // NEW: Refs to keep mic alive and save text safely across pauses
   const recognitionRef = useRef<any>(null);
+  const isRecordingRef = useRef(false);
+  const fullTranscriptRef = useRef("");
 
   const [showToast, setShowToast] = useState(false);
   const [isAIPanelOpen, setIsAIPanelOpen] = useState(false);
 
-  // New States for AI Chat Feature
   const [aiChatInput, setAiChatInput] = useState("");
   const [aiChatHistory, setAiChatHistory] = useState<ChatMessage[]>([]);
   const [loadingChat, setLoadingChat] = useState(false);
@@ -74,31 +77,60 @@ function RoomContent() {
     setTimeout(() => setShowToast(false), 3000);
   };
 
+  // --- SMART MIC LOGIC START ---
   const handleStartAI = () => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
       alert("Your browser does not support AI Speech Detection.");
       return;
     }
+
     const recognition = new SpeechRecognition();
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.lang = "en-US"; 
 
     recognition.onresult = (event: any) => {
-      let text = "";
-      for (let i = 0; i < event.results.length; i++) {
-        text += event.results[i][0].transcript + " ";
+      let interimText = "";
+      let finalAdded = "";
+
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        if (event.results[i].isFinal) {
+          finalAdded += event.results[i][0].transcript + " ";
+        } else {
+          interimText += event.results[i][0].transcript;
+        }
       }
-      setTranscript(text);
+
+      // Safely append only finalized sentences
+      if (finalAdded) {
+        fullTranscriptRef.current += finalAdded;
+      }
+      
+      // Update screen with full history + current speaking words
+      setTranscript(fullTranscriptRef.current + interimText);
+    };
+
+    // Auto-Wakeup mechanism: Restarts mic automatically if user didn't click Stop
+    recognition.onend = () => {
+      if (isRecordingRef.current) {
+        try { recognition.start(); } catch (e) { console.log(e); }
+      }
+    };
+
+    // Ignore silence errors so it can restart smoothly
+    recognition.onerror = (event: any) => {
+      if (event.error === 'no-speech') return; 
     };
 
     recognition.start();
     setIsRecording(true);
+    isRecordingRef.current = true;
     recognitionRef.current = recognition;
   };
 
   const handleStopAI = async () => {
+    isRecordingRef.current = false; // Stop the auto-wakeup
     if (recognitionRef.current) recognitionRef.current.stop();
     setIsRecording(false);
     setLoadingAI(true);
@@ -108,7 +140,7 @@ function RoomContent() {
       const res = await fetch("/api/ai-summary", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ transcript }),
+        body: JSON.stringify({ transcript: fullTranscriptRef.current || transcript }),
       });
       
       const data = await res.json();
@@ -143,8 +175,8 @@ function RoomContent() {
     }
     setLoadingAI(false);
   };
+  // --- SMART MIC LOGIC END ---
 
-  // Function to Send Question to AI Chat Assistant
   const handleSendAiQuestion = async (e: React.FormEvent) => {
     e.preventDefault();
     const query = aiChatInput.trim();
@@ -158,7 +190,7 @@ function RoomContent() {
       const res = await fetch("/api/ai-chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ transcript, question: query }),
+        body: JSON.stringify({ transcript: fullTranscriptRef.current || transcript, question: query }),
       });
       const data = await res.json();
 
@@ -238,7 +270,6 @@ function RoomContent() {
         </button>
       )}
 
-      {/* DMeet Style Sliding Drawer Panel */}
       <div className={`absolute right-0 top-0 h-full w-full sm:w-[420px] bg-[#030712]/95 backdrop-blur-xl z-[60] shadow-[-10px_0_30px_rgba(0,0,0,0.8)] border-l border-gray-800/50 flex flex-col transform transition-transform duration-300 ease-in-out ${isAIPanelOpen ? 'translate-x-0' : 'translate-x-full'}`}>
         
         <div className="flex items-center justify-between p-5 border-b border-gray-800/50">
@@ -248,10 +279,8 @@ function RoomContent() {
           </button>
         </div>
 
-        {/* Dynamic Inner Panel Body */}
         <div className="flex-1 overflow-hidden flex flex-col p-4 min-h-0">
           
-          {/* Top Half: Summary and Live Transcript Scroll Views */}
           <div className="flex-1 overflow-y-auto pr-1 space-y-3 custom-scrollbar min-h-0 pb-2">
             
             <div className="bg-black/40 rounded-xl p-3.5 border border-gray-800/60 relative">
@@ -272,7 +301,6 @@ function RoomContent() {
               </div>
             )}
 
-            {/* AI Interactive Chat Area */}
             {aiChatHistory.length > 0 && (
               <div className="border-t border-gray-800/50 pt-3 space-y-2.5">
                 <h4 className="text-[10px] text-[#00ff88] font-bold uppercase tracking-wider">AI Chat Discussions</h4>
@@ -292,10 +320,8 @@ function RoomContent() {
             )}
           </div>
 
-          {/* Bottom Half: Control Buttons and Input Form */}
           <div className="mt-auto border-t border-gray-800/60 pt-3 space-y-3 bg-gray-950 flex-shrink-0">
             
-            {/* DMeet Style AI Query Input Box */}
             {transcript && (
               <form onSubmit={handleSendAiQuestion} className="flex gap-2 items-center bg-black/50 border border-gray-800 rounded-xl p-1.5 focus-within:border-[#00e5ff]/40 transition-colors">
                 <input 
@@ -316,7 +342,6 @@ function RoomContent() {
               </form>
             )}
 
-            {/* Core Recording Trigger Buttons */}
             <div className="flex flex-col gap-2 pb-1">
               {!isRecording ? (
                 <button onClick={handleStartAI} className="w-full bg-gradient-to-r from-green-600 to-green-500 hover:from-green-500 hover:to-green-400 text-white font-bold py-2.5 rounded-xl transition-all text-xs shadow-[0_0_15px_rgba(0,255,136,0.1)]">
