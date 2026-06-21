@@ -41,6 +41,7 @@ function RoomContent() {
   const fullTranscriptRef = useRef("");
 
   const [showToast, setShowToast] = useState(false);
+  const [toastMsg, setToastMsg] = useState(""); // Dynamic Toast Message
   const [isAIPanelOpen, setIsAIPanelOpen] = useState(false);
 
   const [aiLanguage, setAiLanguage] = useState("English");
@@ -78,11 +79,42 @@ function RoomContent() {
     }
   }, [aiChatHistory]);
 
+  // NEW: Helper function for showing dynamic alerts beautifully
+  const showDynamicToast = (msg: string) => {
+    setToastMsg(msg);
+    setShowToast(true);
+    setTimeout(() => setShowToast(false), 3000);
+  };
+
   const copyInviteLink = () => {
     const inviteLink = `${window.location.origin}/room?id=${roomId}`;
     navigator.clipboard.writeText(inviteLink);
-    setShowToast(true);
-    setTimeout(() => setShowToast(false), 3000);
+    showDynamicToast("Invite link copied to clipboard!");
+  };
+
+  // NEW: Feature to Export Meeting Report
+  const handleDownloadReport = () => {
+    if (!summary) return;
+    const reportContent = `=======================================\n           dSpaces Meeting Report\n=======================================\n\nRoom ID: ${roomId}\nDate: ${new Date().toLocaleString()}\nLanguage: ${aiLanguage}\n\n${summary}\n\n=======================================\n          Full Raw Transcript\n=======================================\n${fullTranscriptRef.current || transcript}`;
+    
+    const blob = new Blob([reportContent], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `dSpaces_Report_${roomId}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    showDynamicToast("Report Downloaded Successfully!");
+  };
+
+  // NEW: Feature to instantly copy summary
+  const handleCopySummary = () => {
+    if (!summary) return;
+    navigator.clipboard.writeText(summary);
+    showDynamicToast("Summary copied to clipboard!");
   };
 
   const handleClearTranscript = () => {
@@ -90,9 +122,9 @@ function RoomContent() {
     fullTranscriptRef.current = "";
     setAiChatHistory([]);
     setSummary("");
+    showDynamicToast("Data cleared successfully!");
   };
 
-  // --- SMART & SAFE MIC LOGIC ---
   const handleStartAI = () => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
@@ -124,27 +156,20 @@ function RoomContent() {
       setTranscript(fullTranscriptRef.current + interimText);
     };
 
-    // ADVANCED WAKEUP: Using setTimeout to bypass browser spam-blocking
     recognition.onend = () => {
       if (isRecordingRef.current) {
         setTimeout(() => {
-          try { 
-            recognition.start(); 
-          } catch (e) { 
-            console.log("Mic restart blocked by browser."); 
-          }
-        }, 350); // 350ms delay is the magic number to trick the browser
+          try { recognition.start(); } catch (e) { console.log("Mic restart blocked."); }
+        }, 350); 
       }
     };
 
     recognition.onerror = (event: any) => {
-      // If hardware conflict happens (Mobile issue), gracefully stop
       if (event.error === 'audio-capture' || event.error === 'not-allowed') {
         isRecordingRef.current = false;
         setIsRecording(false);
-        alert("Microphone conflict detected. On mobile, please try tapping 'Start' again or ensure no other app is using the mic.");
+        alert("Microphone conflict detected. Ensure no other app is using the mic.");
       }
-      // 'no-speech' error will naturally trigger 'onend' and restart after 350ms
     };
 
     try {
@@ -261,7 +286,7 @@ function RoomContent() {
 
       <div className={`absolute top-6 left-1/2 transform -translate-x-1/2 z-[100] bg-[#0f172a] text-white px-6 py-3 rounded-full shadow-[0_0_15px_rgba(0,229,255,0.3)] flex items-center gap-3 border border-[#00e5ff]/30 transition-all duration-300 ${showToast ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-10 pointer-events-none'}`}>
         <svg className="w-5 h-5 text-[#00ff88]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg>
-        <span className="font-medium text-sm">Invite link copied to clipboard!</span>
+        <span className="font-medium text-sm">{toastMsg || "Success!"}</span>
       </div>
 
       <div className="flex-none px-6 py-4 bg-black/40 backdrop-blur-md border-b border-gray-800/50 flex justify-between items-center z-40">
@@ -345,11 +370,27 @@ function RoomContent() {
             </div>
 
             {summary && (
-              <div className="bg-blue-900/10 border border-[#00e5ff]/20 rounded-xl p-3.5">
-                <h3 className="font-bold text-[#00e5ff] mb-1.5 text-xs">AI Generated Summary</h3>
-                <div className={`text-xs whitespace-pre-wrap leading-relaxed ${summary.startsWith('❌') ? 'text-red-400' : 'text-gray-200'}`}>
-                  {summary}
+              <div className="bg-blue-900/10 border border-[#00e5ff]/20 rounded-xl p-3.5 flex flex-col gap-3">
+                <div>
+                  <h3 className="font-bold text-[#00e5ff] mb-1.5 text-xs">AI Generated Summary</h3>
+                  <div className={`text-xs whitespace-pre-wrap leading-relaxed ${summary.startsWith('❌') ? 'text-red-400' : 'text-gray-200'}`}>
+                    {summary}
+                  </div>
                 </div>
+                
+                {/* NEW: Export & Share Action Buttons */}
+                {!summary.startsWith('❌') && (
+                  <div className="flex items-center gap-2 pt-2 border-t border-[#00e5ff]/10">
+                    <button onClick={handleCopySummary} className="flex-1 bg-gray-900 hover:bg-gray-800 text-gray-300 py-2 rounded-lg text-[10px] font-bold transition-colors border border-gray-700 flex justify-center items-center gap-1.5">
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                      Copy
+                    </button>
+                    <button onClick={handleDownloadReport} className="flex-1 bg-blue-600/20 hover:bg-blue-600/40 text-[#00e5ff] py-2 rounded-lg text-[10px] font-bold transition-colors border border-blue-500/30 flex justify-center items-center gap-1.5 shadow-[0_0_10px_rgba(0,229,255,0.1)]">
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                      Download Report
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 
