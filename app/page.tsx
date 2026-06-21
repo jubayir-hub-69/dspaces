@@ -2,9 +2,99 @@
 
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
 import "@solana/wallet-adapter-react-ui/styles.css";
+
+// ==========================================
+// NEW: Animated Connected Nodes Background
+// ==========================================
+const NetworkBackground = ({ isDark }: { isDark: boolean }) => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    let animationFrameId: number;
+    const particles: any[] = [];
+    const numParticles = window.innerWidth < 768 ? 40 : 80;
+
+    const resize = () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    };
+    window.addEventListener('resize', resize);
+    resize();
+
+    class Particle {
+      x: number; y: number; vx: number; vy: number; color: string;
+      constructor() {
+        this.x = Math.random() * canvas!.width;
+        this.y = Math.random() * canvas!.height;
+        this.vx = (Math.random() - 0.5) * 0.8;
+        this.vy = (Math.random() - 0.5) * 0.8;
+        this.color = Math.random() > 0.5 ? '#00e5ff' : '#00ff88'; 
+      }
+      update() {
+        this.x += this.vx;
+        this.y += this.vy;
+        if (this.x < 0 || this.x > canvas!.width) this.vx *= -1;
+        if (this.y < 0 || this.y > canvas!.height) this.vy *= -1;
+      }
+      draw() {
+        if (!ctx) return;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, 2, 0, Math.PI * 2);
+        ctx.fillStyle = isDark ? this.color : '#3b82f6';
+        ctx.shadowBlur = isDark ? 10 : 0;
+        ctx.shadowColor = isDark ? this.color : 'transparent';
+        ctx.fill();
+        ctx.shadowBlur = 0; 
+      }
+    }
+
+    for (let i = 0; i < numParticles; i++) {
+      particles.push(new Particle());
+    }
+
+    const animate = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      for (let i = 0; i < numParticles; i++) {
+        particles[i].update();
+        particles[i].draw();
+        for (let j = i + 1; j < numParticles; j++) {
+          const dx = particles[i].x - particles[j].x;
+          const dy = particles[i].y - particles[j].y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          
+          if (distance < 130) {
+            ctx.beginPath();
+            ctx.strokeStyle = isDark 
+              ? `rgba(0, 229, 255, ${1 - distance / 130})` 
+              : `rgba(59, 130, 246, ${0.4 - distance / 325})`;
+            ctx.lineWidth = 0.5;
+            ctx.moveTo(particles[i].x, particles[i].y);
+            ctx.lineTo(particles[j].x, particles[j].y);
+            ctx.stroke();
+          }
+        }
+      }
+      animationFrameId = requestAnimationFrame(animate);
+    };
+    
+    animate();
+    return () => {
+      window.removeEventListener('resize', resize);
+      cancelAnimationFrame(animationFrameId);
+    };
+  }, [isDark]);
+
+  return <canvas ref={canvasRef} className="absolute inset-0 z-0 opacity-60 pointer-events-none" />;
+};
+// ==========================================
 
 const WalletMultiButton = dynamic(
   () => import("@solana/wallet-adapter-react-ui").then((mod) => mod.WalletMultiButton),
@@ -109,15 +199,12 @@ export default function Home() {
       const data = await res.json();
       if (data.success) {
         const verifiedEmail = data.email;
-        
         fetch('/api/global-db', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'ADD', type: 'email', value: verifiedEmail })
         });
-
         let db = getDb();
         let acc = db.find((a: any) => a.email === verifiedEmail);
-        
         if (!acc) {
           acc = { email: verifiedEmail, wallet: null, name: verifiedEmail.split("@")[0], avatar: '👨‍🚀' };
           db.push(acc);
@@ -156,7 +243,6 @@ export default function Home() {
     saveDb(updatedDb);
     let finalId = roomId.trim();
     if (!finalId) return showToast("Please enter a Room ID or Link to join.");
-
     if (finalId.includes("http") || finalId.includes("?")) {
       try {
         const urlObj = new URL(finalId.startsWith("http") ? finalId : `https://dummy.com/${finalId}`);
@@ -179,6 +265,9 @@ export default function Home() {
   return (
     <main className={`min-h-screen transition-colors duration-500 relative overflow-hidden font-sans ${isDark ? 'bg-[#030712] text-white' : 'bg-gray-50 text-gray-900'}`}>
       
+      {/* 🚀 ANIMATED BACKGROUND ADDED HERE */}
+      <NetworkBackground isDark={isDark} />
+
       {toastMsg && (
         <div className="absolute top-6 left-1/2 -translate-x-1/2 z-[1000] bg-red-500/90 backdrop-blur-md text-white px-6 py-3 rounded-xl shadow-2xl font-semibold text-sm animate-fade-in-up border border-red-400">
           {toastMsg}
@@ -224,7 +313,7 @@ export default function Home() {
             </div>
           )}
 
-          {myAcc && (
+         {myAcc && (
              <button onClick={() => router.push('/profile')} className="p-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white sm:hidden shadow-lg shadow-blue-500/20">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
              </button>
@@ -251,7 +340,7 @@ export default function Home() {
               </div>
 
               <div className={`flex-1 text-left p-6 rounded-2xl border transition-colors ${isDark ? 'bg-gray-900/40 border-gray-800 hover:border-blue-500/50' : 'bg-gray-50 border-gray-200 hover:border-blue-400'}`}>
-                <label className={`flex items-center gap-2 text-xs font-bold uppercase tracking-widest mb-4 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}><span className="w-2 h-2 rounded-full bg-blue-500"></span>Option 2: Email Login</label>
+                 <label className={`flex items-center gap-2 text-xs font-bold uppercase tracking-widest mb-4 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}><span className="w-2 h-2 rounded-full bg-blue-500"></span>Option 2: Email Login</label>
                 <div className="flex flex-col gap-4">
                   {!otpSent ? (
                     <div className="flex flex-col gap-3">
