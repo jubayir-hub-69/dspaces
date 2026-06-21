@@ -5,6 +5,11 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { LiveKitRoom, VideoConference, RoomAudioRenderer } from "@dtelecom/components-react";
 import "@dtelecom/components-styles";
 
+interface ChatMessage {
+  sender: "user" | "ai";
+  text: string;
+}
+
 function RoomContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -26,6 +31,12 @@ function RoomContent() {
 
   const [showToast, setShowToast] = useState(false);
   const [isAIPanelOpen, setIsAIPanelOpen] = useState(false);
+
+  // New States for AI Chat Feature
+  const [aiChatInput, setAiChatInput] = useState("");
+  const [aiChatHistory, setAiChatHistory] = useState<ChatMessage[]>([]);
+  const [loadingChat, setLoadingChat] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const fetchToken = async () => {
@@ -49,6 +60,12 @@ function RoomContent() {
     };
     fetchToken();
   }, [roomId, userName]);
+
+  useEffect(() => {
+    if (chatEndRef.current) {
+      chatEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [aiChatHistory]);
 
   const copyInviteLink = () => {
     const inviteLink = `${window.location.origin}/room?id=${roomId}`;
@@ -99,7 +116,6 @@ function RoomContent() {
       if (data.success) {
         setSummary(data.summary);
         
-        // --- NEW: Save Meeting to History Database ---
         try {
           const sessionId = localStorage.getItem("dspaces_active_session");
           if (sessionId) {
@@ -118,7 +134,6 @@ function RoomContent() {
             localStorage.setItem(historyKey, JSON.stringify(updatedHistory));
           }
         } catch(e) { console.error("Could not save history"); }
-        // ---------------------------------------------
 
       } else {
         setSummary(`❌ AI Error: ${data.error}`);
@@ -127,6 +142,36 @@ function RoomContent() {
       setSummary(`❌ Request Failed: ${e.message}`);
     }
     setLoadingAI(false);
+  };
+
+  // Function to Send Question to AI Chat Assistant
+  const handleSendAiQuestion = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const query = aiChatInput.trim();
+    if (!query || !transcript) return;
+
+    setAiChatHistory(prev => [...prev, { sender: "user", text: query }]);
+    setAiChatInput("");
+    setLoadingChat(true);
+
+    try {
+      const res = await fetch("/api/ai-chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transcript, question: query }),
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        setAiChatHistory(prev => [...prev, { sender: "ai", text: data.answer }]);
+      } else {
+        setAiChatHistory(prev => [...prev, { sender: "ai", text: `❌ Error: ${data.error}` }]);
+      }
+    } catch (err: any) {
+      setAiChatHistory(prev => [...prev, { sender: "ai", text: `❌ Request failed: ${err.message}` }]);
+    } finally {
+      setLoadingChat(false);
+    }
   };
 
   if (errorMsg) {
@@ -151,6 +196,7 @@ function RoomContent() {
 
   return (
     <div className="relative flex flex-col h-[100dvh] w-full bg-[#030712] overflow-hidden font-sans">
+      
       <div className="absolute inset-0 z-0 pointer-events-none bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-[#00ff88]/10 via-transparent to-transparent"></div>
       <div className="absolute inset-0 z-0 pointer-events-none bg-[radial-gradient(ellipse_at_bottom_left,_var(--tw-gradient-stops))] from-[#00e5ff]/10 via-[#030712] to-black"></div>
 
@@ -192,7 +238,8 @@ function RoomContent() {
         </button>
       )}
 
-      <div className={`absolute right-0 top-0 h-full w-full sm:w-[400px] bg-[#030712]/95 backdrop-blur-xl z-[60] shadow-[-10px_0_30px_rgba(0,0,0,0.8)] border-l border-gray-800/50 flex flex-col transform transition-transform duration-300 ease-in-out ${isAIPanelOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+      {/* DMeet Style Sliding Drawer Panel */}
+      <div className={`absolute right-0 top-0 h-full w-full sm:w-[420px] bg-[#030712]/95 backdrop-blur-xl z-[60] shadow-[-10px_0_30px_rgba(0,0,0,0.8)] border-l border-gray-800/50 flex flex-col transform transition-transform duration-300 ease-in-out ${isAIPanelOpen ? 'translate-x-0' : 'translate-x-full'}`}>
         
         <div className="flex items-center justify-between p-5 border-b border-gray-800/50">
           <h2 className="text-xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-[#00e5ff] to-[#00ff88] flex items-center gap-2">✨ AI Assistant</h2>
@@ -201,38 +248,87 @@ function RoomContent() {
           </button>
         </div>
 
-        <div className="flex-1 overflow-hidden flex flex-col p-5">
-          <div className="flex-1 min-h-0 overflow-y-auto bg-black/40 rounded-2xl p-4 mb-4 border border-gray-800/50 custom-scrollbar relative">
-            <h3 className="text-xs text-gray-500 font-bold uppercase tracking-widest mb-2 absolute top-2 bg-black/60 px-2 rounded">Live Transcript</h3>
-            <div className="mt-6">
+        {/* Dynamic Inner Panel Body */}
+        <div className="flex-1 overflow-hidden flex flex-col p-4 min-h-0">
+          
+          {/* Top Half: Summary and Live Transcript Scroll Views */}
+          <div className="flex-1 overflow-y-auto pr-1 space-y-3 custom-scrollbar min-h-0 pb-2">
+            
+            <div className="bg-black/40 rounded-xl p-3.5 border border-gray-800/60 relative">
+              <h3 className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-1">Live Transcript</h3>
               {transcript ? (
-                <p className="text-gray-300 text-sm leading-relaxed italic">"{transcript}"</p>
+                <p className="text-gray-300 text-xs leading-relaxed italic">"{transcript}"</p>
               ) : (
-                <p className="text-center text-sm text-gray-600 mt-4">Start recording to see live conversation...</p>
+                <p className="text-xs text-gray-600">Start recording to capture conversation...</p>
               )}
             </div>
+
+            {summary && (
+              <div className="bg-blue-900/10 border border-[#00e5ff]/20 rounded-xl p-3.5">
+                <h3 className="font-bold text-[#00e5ff] mb-1.5 text-xs">AI Generated Summary</h3>
+                <div className={`text-xs whitespace-pre-wrap leading-relaxed ${summary.startsWith('❌') ? 'text-red-400' : 'text-gray-200'}`}>
+                  {summary}
+                </div>
+              </div>
+            )}
+
+            {/* AI Interactive Chat Area */}
+            {aiChatHistory.length > 0 && (
+              <div className="border-t border-gray-800/50 pt-3 space-y-2.5">
+                <h4 className="text-[10px] text-[#00ff88] font-bold uppercase tracking-wider">AI Chat Discussions</h4>
+                {aiChatHistory.map((msg, i) => (
+                  <div key={i} className={`flex flex-col max-w-[85%] rounded-xl p-2.5 text-xs leading-relaxed ${msg.sender === "user" ? "bg-blue-600/20 border border-blue-500/30 ml-auto text-blue-200" : "bg-gray-800/40 border border-gray-700/40 mr-auto text-gray-300"}`}>
+                    <span className="text-[9px] font-bold uppercase mb-1 opacity-50">{msg.sender === "user" ? "You" : "AI Assistant"}</span>
+                    <p className="whitespace-pre-wrap">{msg.text}</p>
+                  </div>
+                ))}
+                {loadingChat && (
+                  <div className="bg-gray-800/20 border border-gray-800 animate-pulse mr-auto rounded-xl p-2.5 text-xs text-[#00e5ff] max-w-[85%]">
+                    AI is thinking...
+                  </div>
+                )}
+                <div ref={chatEndRef} />
+              </div>
+            )}
           </div>
 
-          {summary && (
-            <div className="flex-1 min-h-0 overflow-y-auto bg-blue-900/10 border border-[#00e5ff]/20 rounded-2xl p-4 mb-4 custom-scrollbar">
-              <h3 className="font-bold text-[#00e5ff] mb-2 text-sm">AI Generated Summary</h3>
-              <div className={`text-sm whitespace-pre-wrap leading-relaxed ${summary.startsWith('❌') ? 'text-red-400 font-medium' : 'text-gray-200'}`}>
-                {summary}
-              </div>
-            </div>
-          )}
-
-          <div className="flex flex-col gap-2 mt-auto flex-shrink-0 pt-2">
-            {!isRecording ? (
-              <button onClick={handleStartAI} className="w-full bg-gradient-to-r from-green-600 to-green-500 hover:from-green-500 hover:to-green-400 text-white font-bold py-3 rounded-xl transition-all text-sm shadow-[0_0_15px_rgba(0,255,136,0.2)]">
-                Start AI Recording
-              </button>
-            ) : (
-              <button onClick={handleStopAI} className="w-full bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-400 text-white font-bold py-3 rounded-xl transition-all text-sm shadow-lg flex items-center justify-center gap-2">
-                <span className="w-2 h-2 bg-white rounded-full animate-pulse"></span> Stop & Generate Summary
-              </button>
+          {/* Bottom Half: Control Buttons and Input Form */}
+          <div className="mt-auto border-t border-gray-800/60 pt-3 space-y-3 bg-gray-950 flex-shrink-0">
+            
+            {/* DMeet Style AI Query Input Box */}
+            {transcript && (
+              <form onSubmit={handleSendAiQuestion} className="flex gap-2 items-center bg-black/50 border border-gray-800 rounded-xl p-1.5 focus-within:border-[#00e5ff]/40 transition-colors">
+                <input 
+                  type="text" 
+                  value={aiChatInput}
+                  onChange={(e) => setAiChatInput(e.target.value)}
+                  placeholder="Ask about this meeting..." 
+                  disabled={loadingChat}
+                  className="flex-1 bg-transparent text-xs text-white outline-none px-2 py-1.5 placeholder-gray-600 disabled:opacity-50"
+                />
+                <button 
+                  type="submit" 
+                  disabled={loadingChat || !aiChatInput.trim()}
+                  className="bg-[#0f172a] border border-gray-700 hover:border-[#00ff88]/50 text-white p-2 rounded-lg transition-colors disabled:opacity-30 flex-shrink-0"
+                >
+                  <svg className="w-3.5 h-3.5 text-[#00ff88]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+                </button>
+              </form>
             )}
-            {loadingAI && <p className="text-center text-xs text-[#00e5ff] mt-2 font-medium animate-pulse">Generating AI Summary...</p>}
+
+            {/* Core Recording Trigger Buttons */}
+            <div className="flex flex-col gap-2 pb-1">
+              {!isRecording ? (
+                <button onClick={handleStartAI} className="w-full bg-gradient-to-r from-green-600 to-green-500 hover:from-green-500 hover:to-green-400 text-white font-bold py-2.5 rounded-xl transition-all text-xs shadow-[0_0_15px_rgba(0,255,136,0.1)]">
+                  Start AI Recording
+                </button>
+              ) : (
+                <button onClick={handleStopAI} className="w-full bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-400 text-white font-bold py-2.5 rounded-xl transition-all text-xs shadow-lg flex items-center justify-center gap-2">
+                  <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></span> Stop & Generate Summary
+                </button>
+              )}
+              {loadingAI && <p className="text-center text-[10px] text-[#00e5ff] font-medium animate-pulse">Processing Meeting Analytics...</p>}
+            </div>
           </div>
         </div>
       </div>
