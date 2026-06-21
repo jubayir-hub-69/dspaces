@@ -10,6 +10,15 @@ interface ChatMessage {
   text: string;
 }
 
+// Map languages to Speech Recognition Locales
+const languageMap: Record<string, string> = {
+  "English": "en-US",
+  "Bengali": "bn-BD",
+  "Spanish": "es-ES",
+  "French": "fr-FR",
+  "Hindi": "hi-IN"
+};
+
 function RoomContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -34,6 +43,9 @@ function RoomContent() {
 
   const [showToast, setShowToast] = useState(false);
   const [isAIPanelOpen, setIsAIPanelOpen] = useState(false);
+
+  // NEW: AI Language State
+  const [aiLanguage, setAiLanguage] = useState("English");
 
   const [aiChatInput, setAiChatInput] = useState("");
   const [aiChatHistory, setAiChatHistory] = useState<ChatMessage[]>([]);
@@ -76,7 +88,6 @@ function RoomContent() {
     setTimeout(() => setShowToast(false), 3000);
   };
 
-  // NEW: Function to clear transcript and chat
   const handleClearTranscript = () => {
     setTranscript("");
     fullTranscriptRef.current = "";
@@ -94,7 +105,9 @@ function RoomContent() {
     const recognition = new SpeechRecognition();
     recognition.continuous = true;
     recognition.interimResults = true;
-    recognition.lang = "en-US"; 
+    
+    // NEW: Use the selected language for voice recognition
+    recognition.lang = languageMap[aiLanguage] || "en-US"; 
 
     recognition.onresult = (event: any) => {
       let interimText = "";
@@ -142,7 +155,8 @@ function RoomContent() {
       const res = await fetch("/api/ai-summary", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ transcript: fullTranscriptRef.current || transcript }),
+        // NEW: Pass selected language to backend
+        body: JSON.stringify({ transcript: fullTranscriptRef.current || transcript, language: aiLanguage }),
       });
       
       const data = await res.json();
@@ -191,7 +205,8 @@ function RoomContent() {
       const res = await fetch("/api/ai-chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ transcript: fullTranscriptRef.current || transcript, question: query }),
+        // NEW: Pass selected language to backend chat
+        body: JSON.stringify({ transcript: fullTranscriptRef.current || transcript, question: query, language: aiLanguage }),
       });
       const data = await res.json();
 
@@ -273,11 +288,29 @@ function RoomContent() {
 
       <div className={`absolute right-0 top-0 h-full w-full sm:w-[420px] bg-[#030712]/95 backdrop-blur-xl z-[60] shadow-[-10px_0_30px_rgba(0,0,0,0.8)] border-l border-gray-800/50 flex flex-col transform transition-transform duration-300 ease-in-out ${isAIPanelOpen ? 'translate-x-0' : 'translate-x-full'}`}>
         
-        <div className="flex items-center justify-between p-5 border-b border-gray-800/50">
-          <h2 className="text-xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-[#00e5ff] to-[#00ff88] flex items-center gap-2">✨ AI Assistant</h2>
-          <button onClick={() => setIsAIPanelOpen(false)} className="text-gray-400 hover:text-white p-2 bg-gray-900 rounded-lg hover:bg-gray-800 transition-colors">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-          </button>
+        <div className="flex items-center justify-between p-4 border-b border-gray-800/50">
+          <h2 className="text-lg font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-[#00e5ff] to-[#00ff88] flex items-center gap-2">✨ AI Assistant</h2>
+          
+          <div className="flex items-center gap-3">
+            {/* NEW: AI Translator Dropdown */}
+            <select 
+              value={aiLanguage}
+              onChange={(e) => setAiLanguage(e.target.value)}
+              disabled={isRecording}
+              className="bg-gray-900 border border-[#00e5ff]/30 text-[#00e5ff] text-xs font-bold rounded-lg px-2 py-1.5 outline-none cursor-pointer disabled:opacity-50"
+              title="Select AI Language"
+            >
+              <option value="English">🇬🇧 English</option>
+              <option value="Bengali">🇧🇩 বাংলা</option>
+              <option value="Spanish">🇪🇸 Spanish</option>
+              <option value="French">🇫🇷 French</option>
+              <option value="Hindi">🇮🇳 Hindi</option>
+            </select>
+
+            <button onClick={() => setIsAIPanelOpen(false)} className="text-gray-400 hover:text-white p-1.5 bg-gray-900 rounded-lg hover:bg-gray-800 transition-colors">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-hidden flex flex-col p-4 min-h-0">
@@ -286,8 +319,7 @@ function RoomContent() {
             
             <div className="bg-black/40 rounded-xl p-3.5 border border-gray-800/60 relative">
               <div className="flex justify-between items-center mb-1">
-                <h3 className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Live Transcript</h3>
-                {/* NEW: Clear Transcript Button */}
+                <h3 className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Live Transcript ({aiLanguage})</h3>
                 {(transcript || aiChatHistory.length > 0) && (
                   <button onClick={handleClearTranscript} className="text-gray-400 hover:text-red-400 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 transition-colors">
                     <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
@@ -338,7 +370,7 @@ function RoomContent() {
                   type="text" 
                   value={aiChatInput}
                   onChange={(e) => setAiChatInput(e.target.value)}
-                  placeholder="Ask about this meeting..." 
+                  placeholder={`Ask in ${aiLanguage}...`} 
                   disabled={loadingChat}
                   className="flex-1 bg-transparent text-xs text-white outline-none px-2 py-1.5 placeholder-gray-600 disabled:opacity-50"
                 />
@@ -362,7 +394,7 @@ function RoomContent() {
                   <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></span> Stop & Generate Summary
                 </button>
               )}
-              {loadingAI && <p className="text-center text-[10px] text-[#00e5ff] font-medium animate-pulse">Processing Meeting Analytics...</p>}
+              {loadingAI && <p className="text-center text-[10px] text-[#00e5ff] font-medium animate-pulse">Translating & Processing...</p>}
             </div>
           </div>
         </div>
