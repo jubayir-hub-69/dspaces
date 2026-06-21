@@ -18,6 +18,96 @@ const languageMap: Record<string, string> = {
   "Hindi": "hi-IN"
 };
 
+// ==========================================
+// NEW: Animated Connected Nodes Background
+// ==========================================
+const NetworkBackground = () => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    let animationFrameId: number;
+    const particles: any[] = [];
+    const numParticles = window.innerWidth < 768 ? 40 : 80;
+
+    const resize = () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    };
+    window.addEventListener('resize', resize);
+    resize();
+
+    class Particle {
+      x: number; y: number; vx: number; vy: number; color: string;
+      constructor() {
+        this.x = Math.random() * canvas!.width;
+        this.y = Math.random() * canvas!.height;
+        this.vx = (Math.random() - 0.5) * 0.8;
+        this.vy = (Math.random() - 0.5) * 0.8;
+        // Cyan and Green vibe from the cube image
+        this.color = Math.random() > 0.5 ? '#00e5ff' : '#00ff88'; 
+      }
+      update() {
+        this.x += this.vx;
+        this.y += this.vy;
+        if (this.x < 0 || this.x > canvas!.width) this.vx *= -1;
+        if (this.y < 0 || this.y > canvas!.height) this.vy *= -1;
+      }
+      draw() {
+        if (!ctx) return;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, 2, 0, Math.PI * 2);
+        ctx.fillStyle = this.color;
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = this.color;
+        ctx.fill();
+        ctx.shadowBlur = 0; // Reset for lines
+      }
+    }
+
+    for (let i = 0; i < numParticles; i++) {
+      particles.push(new Particle());
+    }
+
+    const animate = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      for (let i = 0; i < numParticles; i++) {
+        particles[i].update();
+        particles[i].draw();
+        for (let j = i + 1; j < numParticles; j++) {
+          const dx = particles[i].x - particles[j].x;
+          const dy = particles[i].y - particles[j].y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          
+          if (distance < 130) {
+            ctx.beginPath();
+            ctx.strokeStyle = `rgba(0, 229, 255, ${1 - distance / 130})`;
+            ctx.lineWidth = 0.5;
+            ctx.moveTo(particles[i].x, particles[i].y);
+            ctx.lineTo(particles[j].x, particles[j].y);
+            ctx.stroke();
+          }
+        }
+      }
+      animationFrameId = requestAnimationFrame(animate);
+    };
+    
+    animate();
+    return () => {
+      window.removeEventListener('resize', resize);
+      cancelAnimationFrame(animationFrameId);
+    };
+  }, []);
+
+  return <canvas ref={canvasRef} className="absolute inset-0 z-0 opacity-50 pointer-events-none" />;
+};
+// ==========================================
+
+
 function RoomContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -41,7 +131,7 @@ function RoomContent() {
   const fullTranscriptRef = useRef("");
 
   const [showToast, setShowToast] = useState(false);
-  const [toastMsg, setToastMsg] = useState(""); // Dynamic Toast Message
+  const [toastMsg, setToastMsg] = useState("");
   const [isAIPanelOpen, setIsAIPanelOpen] = useState(false);
 
   const [aiLanguage, setAiLanguage] = useState("English");
@@ -79,7 +169,51 @@ function RoomContent() {
     }
   }, [aiChatHistory]);
 
-  // NEW: Helper function for showing dynamic alerts beautifully
+  // ==========================================
+  // NEW: Smart Avatar Override System
+  // ==========================================
+  useEffect(() => {
+    const db = JSON.parse(localStorage.getItem('dspaces_db') || '[]');
+    const userMap = new Map();
+    db.forEach((u: any) => userMap.set(u.name, u.avatar));
+
+    const updateAvatars = () => {
+      const tiles = document.querySelectorAll('.lk-participant-tile');
+      tiles.forEach(tile => {
+        const nameEl = tile.querySelector('.lk-participant-name');
+        const placeholder = tile.querySelector('.lk-participant-placeholder');
+        
+        if (nameEl && placeholder) {
+          const rawName = nameEl.textContent || '';
+          const name = rawName.replace(' (Host)', '').replace(' (You)', '').trim();
+          
+          const avatar = userMap.get(name) || '🤖';
+          
+          if (!placeholder.querySelector('.custom-avatar')) {
+            placeholder.innerHTML = ''; 
+            
+            if (avatar.startsWith('data:image')) {
+              placeholder.innerHTML = `<img src="${avatar}" class="custom-avatar" style="width: 120px; height: 120px; border-radius: 50%; object-fit: cover; border: 3px solid #00e5ff; box-shadow: 0 0 25px rgba(0,229,255,0.4);" />`;
+            } else {
+              placeholder.innerHTML = `<div class="custom-avatar" style="font-size: 80px; filter: drop-shadow(0 0 20px rgba(0,255,136,0.5));">${avatar}</div>`;
+            }
+          }
+        }
+      });
+    };
+
+    const observer = new MutationObserver(updateAvatars);
+    observer.observe(document.body, { childList: true, subtree: true });
+    
+    const interval = setInterval(updateAvatars, 2000);
+    
+    return () => {
+      observer.disconnect();
+      clearInterval(interval);
+    };
+  }, []);
+  // ==========================================
+
   const showDynamicToast = (msg: string) => {
     setToastMsg(msg);
     setShowToast(true);
@@ -92,7 +226,6 @@ function RoomContent() {
     showDynamicToast("Invite link copied to clipboard!");
   };
 
-  // NEW: Feature to Export Meeting Report
   const handleDownloadReport = () => {
     if (!summary) return;
     const reportContent = `=======================================\n           dSpaces Meeting Report\n=======================================\n\nRoom ID: ${roomId}\nDate: ${new Date().toLocaleString()}\nLanguage: ${aiLanguage}\n\n${summary}\n\n=======================================\n          Full Raw Transcript\n=======================================\n${fullTranscriptRef.current || transcript}`;
@@ -110,7 +243,6 @@ function RoomContent() {
     showDynamicToast("Report Downloaded Successfully!");
   };
 
-  // NEW: Feature to instantly copy summary
   const handleCopySummary = () => {
     if (!summary) return;
     navigator.clipboard.writeText(summary);
@@ -260,7 +392,7 @@ function RoomContent() {
 
   if (errorMsg) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen bg-[#050505] text-white text-center p-6">
+      <div className="flex flex-col items-center justify-center h-screen bg-[#04050A] text-white text-center p-6">
         <h1 className="text-3xl text-red-500 font-bold mb-4">Connection Error</h1>
         <p className="text-gray-300 text-lg">{errorMsg}</p>
         <button onClick={() => router.push("/")} className="mt-8 px-8 py-3 bg-blue-600 hover:bg-blue-500 rounded-xl font-bold transition-all">Go Back Home</button>
@@ -270,28 +402,27 @@ function RoomContent() {
 
   if (!token || !serverUrl) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen bg-[#050505] text-white relative">
-         <div className="absolute inset-0 z-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-blue-900/20 via-[#050505] to-black"></div>
-         <div className="z-10 animate-spin rounded-full h-14 w-14 border-t-4 border-b-4 border-[#00ff88] mb-6"></div>
-         <p className="z-10 text-lg font-semibold tracking-widest animate-pulse text-[#00e5ff]">Connecting to secure room...</p>
+      <div className="flex flex-col items-center justify-center h-screen bg-[#04050A] text-white relative">
+         <NetworkBackground />
+         <div className="z-10 animate-spin rounded-full h-14 w-14 border-t-4 border-b-4 border-[#00ff88] mb-6 shadow-[0_0_15px_#00ff88]"></div>
+         <p className="z-10 text-lg font-semibold tracking-widest animate-pulse text-[#00e5ff] drop-shadow-[0_0_10px_#00e5ff]">Connecting to secure room...</p>
       </div>
     );
   }
 
   return (
-    <div className="relative flex flex-col h-[100dvh] w-full bg-[#030712] overflow-hidden font-sans">
+    <div className="relative flex flex-col h-[100dvh] w-full bg-[#04050A] overflow-hidden font-sans">
       
-      <div className="absolute inset-0 z-0 pointer-events-none bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-[#00ff88]/10 via-transparent to-transparent"></div>
-      <div className="absolute inset-0 z-0 pointer-events-none bg-[radial-gradient(ellipse_at_bottom_left,_var(--tw-gradient-stops))] from-[#00e5ff]/10 via-[#030712] to-black"></div>
+      <NetworkBackground />
 
       <div className={`absolute top-6 left-1/2 transform -translate-x-1/2 z-[100] bg-[#0f172a] text-white px-6 py-3 rounded-full shadow-[0_0_15px_rgba(0,229,255,0.3)] flex items-center gap-3 border border-[#00e5ff]/30 transition-all duration-300 ${showToast ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-10 pointer-events-none'}`}>
         <svg className="w-5 h-5 text-[#00ff88]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg>
         <span className="font-medium text-sm">{toastMsg || "Success!"}</span>
       </div>
 
-      <div className="flex-none px-6 py-4 bg-black/40 backdrop-blur-md border-b border-gray-800/50 flex justify-between items-center z-40">
-        <h1 className="text-white text-base lg:text-lg font-bold truncate max-w-[200px] sm:max-w-xs drop-shadow-md">Room: <span className="text-[#00e5ff]">{roomId}</span></h1>
-        <button onClick={copyInviteLink} className="bg-[#0f172a] hover:bg-[#1e293b] text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all border border-gray-700 hover:border-[#00e5ff]/50 flex items-center gap-2 shadow-lg">
+      <div className="flex-none px-6 py-4 bg-black/50 backdrop-blur-md border-b border-gray-800/50 flex justify-between items-center z-40">
+        <h1 className="text-white text-base lg:text-lg font-bold truncate max-w-[200px] sm:max-w-xs drop-shadow-[0_0_8px_rgba(0,229,255,0.5)]">Room: <span className="text-[#00e5ff]">{roomId}</span></h1>
+        <button onClick={copyInviteLink} className="bg-[#0f172a] hover:bg-[#1e293b] text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all border border-gray-700 hover:border-[#00e5ff]/50 flex items-center gap-2 shadow-[0_0_10px_rgba(0,229,255,0.1)]">
           <svg className="w-4 h-4 text-[#00e5ff]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
           <span className="hidden sm:inline">Copy Invite Link</span>
           <span className="sm:hidden">Copy</span>
@@ -305,7 +436,7 @@ function RoomContent() {
           token={token}
           serverUrl={serverUrl}
           data-lk-theme="default"
-          style={{ height: '100%', width: '100%' }}
+          style={{ height: '100%', width: '100%', backgroundColor: 'transparent' }}
           onDisconnected={() => router.push("/")}
         >
           <VideoConference />
@@ -322,7 +453,7 @@ function RoomContent() {
         </button>
       )}
 
-      <div className={`absolute right-0 top-0 h-full w-full sm:w-[420px] bg-[#030712]/95 backdrop-blur-xl z-[60] shadow-[-10px_0_30px_rgba(0,0,0,0.8)] border-l border-gray-800/50 flex flex-col transform transition-transform duration-300 ease-in-out ${isAIPanelOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+      <div className={`absolute right-0 top-0 h-full w-full sm:w-[420px] bg-[#030712]/95 backdrop-blur-2xl z-[60] shadow-[-10px_0_30px_rgba(0,0,0,0.9)] border-l border-gray-800/50 flex flex-col transform transition-transform duration-300 ease-in-out ${isAIPanelOpen ? 'translate-x-0' : 'translate-x-full'}`}>
         
         <div className="flex items-center justify-between p-4 border-b border-gray-800/50">
           <h2 className="text-lg font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-[#00e5ff] to-[#00ff88] flex items-center gap-2">✨ AI Assistant</h2>
@@ -378,7 +509,6 @@ function RoomContent() {
                   </div>
                 </div>
                 
-                {/* NEW: Export & Share Action Buttons */}
                 {!summary.startsWith('❌') && (
                   <div className="flex items-center gap-2 pt-2 border-t border-[#00e5ff]/10">
                     <button onClick={handleCopySummary} className="flex-1 bg-gray-900 hover:bg-gray-800 text-gray-300 py-2 rounded-lg text-[10px] font-bold transition-colors border border-gray-700 flex justify-center items-center gap-1.5">
@@ -452,6 +582,8 @@ function RoomContent() {
       </div>
       
       <style dangerouslySetInnerHTML={{__html: `
+        .lk-participant-placeholder { background: transparent !important; }
+        .lk-participant-placeholder svg { display: none !important; }
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
@@ -464,9 +596,9 @@ function RoomContent() {
 export default function RoomPage() {
   return (
     <Suspense fallback={
-      <div className="flex flex-col items-center justify-center h-screen bg-[#050505] text-white">
-        <div className="animate-spin rounded-full h-14 w-14 border-t-4 border-b-4 border-[#00ff88] mb-6"></div>
-        <p className="text-lg font-semibold animate-pulse text-[#00e5ff]">Loading secure room...</p>
+      <div className="flex flex-col items-center justify-center h-screen bg-[#04050A] text-white">
+        <div className="animate-spin rounded-full h-14 w-14 border-t-4 border-b-4 border-[#00ff88] mb-6 shadow-[0_0_15px_#00ff88]"></div>
+        <p className="text-lg font-semibold animate-pulse text-[#00e5ff] drop-shadow-[0_0_10px_#00e5ff]">Loading secure room...</p>
       </div>
     }>
       <RoomContent />
