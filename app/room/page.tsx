@@ -18,9 +18,6 @@ const languageMap: Record<string, string> = {
   "Hindi": "hi-IN"
 };
 
-// ==========================================
-// NEW: Animated Connected Nodes Background
-// ==========================================
 const NetworkBackground = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -48,7 +45,6 @@ const NetworkBackground = () => {
         this.y = Math.random() * canvas!.height;
         this.vx = (Math.random() - 0.5) * 0.8;
         this.vy = (Math.random() - 0.5) * 0.8;
-        // Cyan and Green vibe from the cube image
         this.color = Math.random() > 0.5 ? '#00e5ff' : '#00ff88'; 
       }
       update() {
@@ -65,7 +61,7 @@ const NetworkBackground = () => {
         ctx.shadowBlur = 10;
         ctx.shadowColor = this.color;
         ctx.fill();
-        ctx.shadowBlur = 0; // Reset for lines
+        ctx.shadowBlur = 0; 
       }
     }
 
@@ -105,7 +101,6 @@ const NetworkBackground = () => {
 
   return <canvas ref={canvasRef} className="absolute inset-0 z-0 opacity-50 pointer-events-none" />;
 };
-// ==========================================
 
 
 function RoomContent() {
@@ -170,48 +165,66 @@ function RoomContent() {
   }, [aiChatHistory]);
 
   // ==========================================
-  // NEW: Smart Avatar Override System
+  // CLOUD AVATAR SYNC SYSTEM
   // ==========================================
   useEffect(() => {
     const db = JSON.parse(localStorage.getItem('dspaces_db') || '[]');
-    const userMap = new Map();
-    db.forEach((u: any) => userMap.set(u.name, u.avatar));
+    let myName = rawUserName.trim();
+    let myAvatar = '🤖';
+    const me = db.find((u: any) => u.name === myName);
+    if (me) myAvatar = me.avatar;
 
-    const updateAvatars = () => {
-      const tiles = document.querySelectorAll('.lk-participant-tile');
-      tiles.forEach(tile => {
-        const nameEl = tile.querySelector('.lk-participant-name');
-        const placeholder = tile.querySelector('.lk-participant-placeholder');
-        
-        if (nameEl && placeholder) {
-          const rawName = nameEl.textContent || '';
-          const name = rawName.replace(' (Host)', '').replace(' (You)', '').trim();
+    const syncAndApplyAvatars = async () => {
+      try {
+        // Send my avatar to cloud & get everyone's avatar back
+        const res = await fetch('/api/sync-avatar', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: myName, avatar: myAvatar })
+        });
+        const data = await res.json();
+        const globalUserMap = data.avatars || {};
+
+        const tiles = document.querySelectorAll('.lk-participant-tile');
+        tiles.forEach(tile => {
+          const nameEl = tile.querySelector('.lk-participant-name');
+          const placeholder = tile.querySelector('.lk-participant-placeholder');
           
-          const avatar = userMap.get(name) || '🤖';
-          
-          if (!placeholder.querySelector('.custom-avatar')) {
-            placeholder.innerHTML = ''; 
+          if (nameEl && placeholder) {
+            const rawName = nameEl.textContent || '';
+            const tileName = rawName.replace(' (Host)', '').replace(' (You)', '').trim();
             
-            if (avatar.startsWith('data:image')) {
-              placeholder.innerHTML = `<img src="${avatar}" class="custom-avatar" style="width: 120px; height: 120px; border-radius: 50%; object-fit: cover; border: 3px solid #00e5ff; box-shadow: 0 0 25px rgba(0,229,255,0.4);" />`;
-            } else {
-              placeholder.innerHTML = `<div class="custom-avatar" style="font-size: 80px; filter: drop-shadow(0 0 20px rgba(0,255,136,0.5));">${avatar}</div>`;
+            // Priority: Cloud API > Local DB > Default
+            const avatar = globalUserMap[tileName] || (db.find((u:any)=>u.name===tileName)?.avatar) || '🤖';
+            
+            if (!placeholder.querySelector('.custom-avatar') || placeholder.getAttribute('data-avatar') !== avatar) {
+              placeholder.innerHTML = ''; 
+              placeholder.setAttribute('data-avatar', avatar);
+              
+              if (avatar.startsWith('data:image')) {
+                placeholder.innerHTML = `<img src="${avatar}" class="custom-avatar" style="width: 120px; height: 120px; border-radius: 50%; object-fit: cover; border: 3px solid #00e5ff; box-shadow: 0 0 25px rgba(0,229,255,0.4);" />`;
+              } else {
+                placeholder.innerHTML = `<div class="custom-avatar" style="font-size: 80px; filter: drop-shadow(0 0 20px rgba(0,255,136,0.5));">${avatar}</div>`;
+              }
             }
           }
-        }
-      });
+        });
+      } catch(e) {
+        console.log("Sync wait...");
+      }
     };
 
-    const observer = new MutationObserver(updateAvatars);
+    const observer = new MutationObserver(syncAndApplyAvatars);
     observer.observe(document.body, { childList: true, subtree: true });
     
-    const interval = setInterval(updateAvatars, 2000);
+    const interval = setInterval(syncAndApplyAvatars, 3000); // Check every 3 sec
+    syncAndApplyAvatars();
     
     return () => {
       observer.disconnect();
       clearInterval(interval);
     };
-  }, []);
+  }, [rawUserName]);
   // ==========================================
 
   const showDynamicToast = (msg: string) => {
