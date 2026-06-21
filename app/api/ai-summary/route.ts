@@ -5,7 +5,6 @@ export const dynamic = 'force-dynamic';
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    // NEW: Catching the requested language
     const { transcript, language = "English" } = body;
 
     if (!transcript || transcript.trim() === '') {
@@ -19,15 +18,16 @@ export async function POST(req: Request) {
     const listRes = await fetch(listUrl);
     const listData = await listRes.json();
 
-    if (!listRes.ok) return NextResponse.json({ success: false, error: "API Key Error." });
+    if (!listRes.ok) return NextResponse.json({ success: false, error: `API Key Error: ${listData.error?.message}` });
 
     const models = listData.models || [];
     const validModels = models.filter((m: any) => m.supportedGenerationMethods?.includes("generateContent") && m.name.includes("gemini"));
     const selectedModel = (validModels.find((m: any) => m.name.includes("1.5-flash")) || validModels.find((m: any) => m.name.includes("1.5-pro")) || validModels[0])?.name;
 
+    if (!selectedModel) return NextResponse.json({ success: false, error: "No compatible models found." });
+
     const generateUrl = `https://generativelanguage.googleapis.com/v1beta/${selectedModel}:generateContent?key=${apiKey}`;
 
-    // NEW: Prompt updated to translate everything into the selected language
     const prompt = `You are a highly advanced Executive AI Meeting Assistant. 
     
     Important Instructions:
@@ -47,16 +47,33 @@ export async function POST(req: Request) {
     const generateRes = await fetch(generateUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+      body: JSON.stringify({ 
+        contents: [{ parts: [{ text: prompt }] }],
+        // NEW: Forcing Google to NEVER block any summary due to false-positive safety flags
+        safetySettings: [
+          { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+          { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+          { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+          { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
+        ]
+      })
     });
 
     const genData = await generateRes.json();
-    if (!generateRes.ok) return NextResponse.json({ success: false, error: "Google API Failed." });
+    
+    if (!generateRes.ok) {
+        return NextResponse.json({ success: false, error: `Google API Error: ${genData.error?.message || 'Unknown Server Issue'}` });
+    }
 
     const summaryText = genData.candidates?.[0]?.content?.parts?.[0]?.text;
+    
+    if (!summaryText) {
+        return NextResponse.json({ success: false, error: "Google blocked the response or returned empty data." });
+    }
+
     return NextResponse.json({ success: true, summary: summaryText });
     
   } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message });
+    return NextResponse.json({ success: false, error: `Server Crash: ${error.message}` });
   }
 }
