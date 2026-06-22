@@ -107,16 +107,11 @@ const NetworkBackground = () => {
   return <canvas ref={canvasRef} className="absolute inset-0 z-0 opacity-50 pointer-events-none" />;
 };
 
-
-// ==========================================
-// NEW: Meeting Tracker (Counts Max Participants)
-// ==========================================
 const MeetingTracker = ({ setMaxParticipants }: { setMaxParticipants: (n: any) => void }) => {
   const room = useRoomContext();
   useEffect(() => {
     if (!room) return;
     const updateCount = () => {
-      // Local participant (1) + remote participants
       setMaxParticipants((prev: number) => Math.max(prev, room.participants.size + 1));
     };
     room.on('participantConnected', updateCount);
@@ -130,10 +125,6 @@ const MeetingTracker = ({ setMaxParticipants }: { setMaxParticipants: (n: any) =
   return null;
 };
 
-
-// ==========================================
-// BULLETPROOF: Cloud Signal API System for Host Controls
-// ==========================================
 const AudioAndHostControls = ({ rawUserName, showDynamicToast }: { rawUserName: string, showDynamicToast: (msg: string) => void }) => {
   const room = useRoomContext();
   const [aiNoise, setAiNoise] = useState(true);
@@ -177,7 +168,7 @@ const AudioAndHostControls = ({ rawUserName, showDynamicToast }: { rawUserName: 
               }
               if (sig.action === "KICK_USER") {
                 showDynamicToast("🛑 The Host has removed you from the room.");
-                room.disconnect(); // This safely triggers the end-screen for the user
+                room.disconnect(); 
               }
             }
           });
@@ -247,9 +238,6 @@ function RoomContent() {
   const [loadingChat, setLoadingChat] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  // ==========================================
-  // NEW: State for Meeting Stats & Post Screen
-  // ==========================================
   const [meetingStartTime] = useState(Date.now());
   const [maxParticipants, setMaxParticipants] = useState(1);
   const [showPostScreen, setShowPostScreen] = useState(false);
@@ -286,7 +274,7 @@ function RoomContent() {
     }
   }, [aiChatHistory]);
 
-  // CLOUD AVATAR SYNC + HOST 3-DOT MENU
+  // FIX: SLUGGISHNESS RESOLVED - Removed MutationObserver, using pure Interval instead.
   useEffect(() => {
     if (!rawUserName) return;
 
@@ -315,7 +303,6 @@ function RoomContent() {
             const currentRawName = nameEl.textContent || '';
             const tileName = currentRawName.replace(' (Host)', '').replace(' (You)', '').trim();
             
-            // Apply Avatar
             const avatar = globalUserMap[tileName] || (db.find((u:any)=>u.name===tileName)?.avatar) || '🤖';
             if (!placeholder.querySelector('.custom-avatar') || placeholder.getAttribute('data-avatar') !== avatar) {
               placeholder.innerHTML = ''; 
@@ -328,7 +315,6 @@ function RoomContent() {
               }
             }
 
-            // Apply Host Controls (3-Dots)
             if (isHost && tileName !== myCleanName) {
               tile.style.position = 'relative';
               if (!tile.querySelector('.host-control-btn')) {
@@ -358,16 +344,11 @@ function RoomContent() {
       } catch(e) {}
     };
 
-    const observer = new MutationObserver(syncAndApplyAvatars);
-    observer.observe(document.body, { childList: true, subtree: true });
-    
-    const interval = setInterval(syncAndApplyAvatars, 3000); 
+    // Safely running this every 4 seconds without any DOM mutation loops
+    const interval = setInterval(syncAndApplyAvatars, 4000); 
     syncAndApplyAvatars();
     
-    return () => {
-      observer.disconnect();
-      clearInterval(interval);
-    };
+    return () => clearInterval(interval);
   }, [rawUserName, isHost]);
 
   const showDynamicToast = (msg: string) => {
@@ -542,9 +523,6 @@ function RoomContent() {
     }
   };
 
-  // ==========================================
-  // NEW: Handles Disconnect & Calculates Duration
-  // ==========================================
   const handleRoomDisconnect = () => {
     const endTime = Date.now();
     const diffMs = endTime - meetingStartTime;
@@ -579,9 +557,6 @@ function RoomContent() {
     );
   }
 
-  // ==========================================
-  // NEW: Post-Meeting Summary Screen UI
-  // ==========================================
   if (showPostScreen) {
     return (
       <div className="flex flex-col items-center justify-center h-screen bg-[#04050A] text-white relative overflow-hidden">
@@ -658,7 +633,6 @@ function RoomContent() {
           style={{ height: '100%', width: '100%', backgroundColor: 'transparent' }}
           onDisconnected={handleRoomDisconnect}
         >
-          {/* Tracker runs silently inside to count participants */}
           <MeetingTracker setMaxParticipants={setMaxParticipants} />
           <VideoConference />
           <RoomAudioRenderer />
