@@ -108,68 +108,68 @@ const NetworkBackground = () => {
 };
 
 // ==========================================
-// 100% FIXED: Host Control Signals & UI
+// 100% BULLETPROOF: Cloud Signal API System for Host Controls
 // ==========================================
 const AudioAndHostControls = ({ rawUserName, showDynamicToast }: { rawUserName: string, showDynamicToast: (msg: string) => void }) => {
   const room = useRoomContext();
   const router = useRouter();
   const [aiNoise, setAiNoise] = useState(true);
+  const lastSignalTime = useRef(0);
+
+  useEffect(() => {
+    // SEND COMMAND: Host sends Mute/Kick via Cloud API safely
+    (window as any).sendHostAction = async (action: string, target: string) => {
+      try {
+        await fetch('/api/room-signals', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action, target })
+        });
+        
+        if (action === 'MUTE_USER') showDynamicToast(`🎙️ Muted ${target}`);
+        if (action === 'KICK_USER') showDynamicToast(`🚪 Removed ${target} from room`);
+      } catch(e) {
+        console.error("Failed to send command.");
+      }
+    };
+
+    return () => { delete (window as any).sendHostAction; };
+  }, [showDynamicToast]);
 
   useEffect(() => {
     if (!room) return;
+    const myName = rawUserName.replace(' (Host)', '').replace(' (You)', '').trim();
 
-    // Send Command Logic
-    (window as any).sendHostAction = (action: string, target: string) => {
-      if (!room || !room.localParticipant) return;
-      const payload = new TextEncoder().encode(JSON.stringify({ action, target }));
-      
+    // RECEIVE COMMAND: Everyone listens securely to the Cloud API
+    const checkSignals = async () => {
       try {
-        // Try V2 SDK format
-        room.localParticipant.publishData(payload, { reliable: true });
-      } catch (e) {
-        try {
-          // Try V1 SDK format
-          room.localParticipant.publishData(payload, 1 as any);
-        } catch (err) {}
-      }
-
-      if (action === 'MUTE_USER') showDynamicToast(`🎙️ Muted ${target}`);
-      if (action === 'KICK_USER') showDynamicToast(`🚪 Removed ${target} from room`);
-    };
-
-    // Receive Command Logic
-    const handleData = (payload: Uint8Array) => {
-      try {
-        const str = new TextDecoder().decode(payload);
-        const msg = JSON.parse(str);
+        const res = await fetch('/api/room-signals');
+        const data = await res.json();
         
-        const myName = rawUserName.replace(' (Host)', '').replace(' (You)', '').trim();
-
-        if (msg.target === myName) {
-          if (msg.action === "MUTE_USER") {
-            if (room.localParticipant) {
-              room.localParticipant.setMicrophoneEnabled(false);
+        if (data.success && data.signals) {
+          data.signals.forEach((sig: any) => {
+            if (sig.target === myName && sig.timestamp > lastSignalTime.current) {
+              lastSignalTime.current = sig.timestamp;
+              
+              if (sig.action === "MUTE_USER") {
+                if (room.localParticipant) {
+                  room.localParticipant.setMicrophoneEnabled(false);
+                }
+                showDynamicToast("🎙️ The Host has muted your microphone.");
+              }
+              if (sig.action === "KICK_USER") {
+                showDynamicToast("🛑 The Host has removed you from the room.");
+                room.disconnect(); 
+                setTimeout(() => router.push("/"), 1500); 
+              }
             }
-            showDynamicToast("🎙️ The Host has muted your microphone.");
-          }
-          if (msg.action === "KICK_USER") {
-            showDynamicToast("🛑 The Host has removed you from the room.");
-            room.disconnect(); 
-            setTimeout(() => router.push("/"), 1500); 
-          }
+          });
         }
       } catch(e) {}
     };
 
-    // Support both new and old LiveKit versions
-    room.on('data', handleData);
-    room.on('dataReceived', handleData);
-
-    return () => { 
-      room.off('data', handleData); 
-      room.off('dataReceived', handleData);
-      delete (window as any).sendHostAction;
-    };
+    const interval = setInterval(checkSignals, 2000);
+    return () => clearInterval(interval);
   }, [room, rawUserName, router, showDynamicToast]);
 
   const toggleNoiseSuppression = () => {
@@ -388,9 +388,6 @@ function RoomContent() {
     showDynamicToast("Data cleared successfully!");
   };
 
-  // ==========================================
-  // 100% FIXED: Speech Logic (No More "Hello Hello" loop)
-  // ==========================================
   const handleStartAI = () => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
@@ -411,18 +408,18 @@ function RoomContent() {
         text += event.results[i][0].transcript;
       }
       currentSessionText = text;
-      // Append safely without duplicating history
       setTranscript((fullTranscriptRef.current + " " + text).trim());
     };
 
     recognition.onend = () => {
-      // Save completed text before restarting
       if (currentSessionText) {
         fullTranscriptRef.current += " " + currentSessionText;
         currentSessionText = "";
       }
       if (isRecordingRef.current) {
-        try { recognition.start(); } catch (e) {}
+        setTimeout(() => {
+          try { recognition.start(); } catch (e) {}
+        }, 350); 
       }
     };
 
