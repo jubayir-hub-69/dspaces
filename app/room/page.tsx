@@ -6,8 +6,7 @@ import {
   LiveKitRoom, 
   VideoConference, 
   RoomAudioRenderer,
-  useRoomContext,
-  useLocalParticipant
+  useRoomContext
 } from "@dtelecom/components-react";
 import "@dtelecom/components-styles";
 
@@ -109,28 +108,29 @@ const NetworkBackground = () => {
 };
 
 // ==========================================
-// NEW: Advanced Host & Audio Control Center
+// FIX: Advanced Host & Audio Control Center
 // ==========================================
 const HostAndAudioControls = ({ isHost, showDynamicToast }: { isHost: boolean, showDynamicToast: (msg: string) => void }) => {
   const room = useRoomContext();
-  const { localParticipant } = useLocalParticipant();
   const router = useRouter();
   
   const [showHostMenu, setShowHostMenu] = useState(false);
   const [aiNoise, setAiNoise] = useState(true);
 
-  // Listener for Host Commands (Mute All & End Meeting)
   useEffect(() => {
-    if (!room || !localParticipant) return;
+    if (!room) return;
 
-    const handleData = (payload: Uint8Array, participant: any) => {
+    // FIX: LiveKit v2 strictly uses 'dataReceived' instead of 'data'
+    const handleData = (payload: Uint8Array) => {
       try {
         const str = new TextDecoder().decode(payload);
         const msg = JSON.parse(str);
 
         if (!isHost) {
           if (msg.action === "MUTE_ALL") {
-            localParticipant.setMicrophoneEnabled(false);
+            if (room.localParticipant) {
+              room.localParticipant.setMicrophoneEnabled(false);
+            }
             showDynamicToast("🎙️ The Host has muted your microphone.");
           }
           if (msg.action === "END_MEETING") {
@@ -141,9 +141,9 @@ const HostAndAudioControls = ({ isHost, showDynamicToast }: { isHost: boolean, s
       } catch(e) {}
     };
 
-    room.on('data', handleData);
-    return () => { room.off('data', handleData); };
-  }, [room, isHost, localParticipant, router, showDynamicToast]);
+    room.on('dataReceived', handleData);
+    return () => { room.off('dataReceived', handleData); };
+  }, [room, isHost, router, showDynamicToast]);
 
   const handleMuteAll = () => {
     if (!room.localParticipant) return;
@@ -168,8 +168,6 @@ const HostAndAudioControls = ({ isHost, showDynamicToast }: { isHost: boolean, s
 
   return (
     <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-50 flex items-center gap-3">
-      
-      {/* AI Noise Suppression Toggle */}
       <button 
         onClick={toggleNoiseSuppression} 
         className={`px-4 py-2.5 rounded-xl text-xs font-extrabold border transition-all flex items-center gap-2 shadow-[0_0_15px_rgba(0,0,0,0.5)] ${aiNoise ? 'bg-black/60 border-[#00ff88]/50 text-[#00ff88] backdrop-blur-md' : 'bg-black/40 border-gray-600 text-gray-400 backdrop-blur-md'}`}
@@ -178,7 +176,6 @@ const HostAndAudioControls = ({ isHost, showDynamicToast }: { isHost: boolean, s
         AI Noise {aiNoise ? 'ON' : 'OFF'}
       </button>
 
-      {/* Host Control Center Dropdown */}
       {isHost && (
         <div className="relative">
           <button 
@@ -207,17 +204,24 @@ const HostAndAudioControls = ({ isHost, showDynamicToast }: { isHost: boolean, s
     </div>
   );
 };
-// ==========================================
 
 
 function RoomContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const roomId = searchParams.get("id") || "dSpaces-Room";
-  const rawUserName = searchParams.get("name") || "Guest";
-  const isHost = searchParams.get("ishost") === "true";
   
-  const userName = isHost ? `${rawUserName} (Host)` : rawUserName;
+  const roomId = searchParams.get("id") || "dSpaces-Room";
+  const rawUserName = searchParams.get("name");
+  const isHost = searchParams.get("ishost") === "true";
+
+  // FIX: Direct Link Join Protection (Forces user to login/set profile)
+  useEffect(() => {
+    if (!rawUserName) {
+      router.replace(`/?id=${roomId}`);
+    }
+  }, [rawUserName, roomId, router]);
+
+  const userName = isHost ? `${rawUserName || 'Guest'} (Host)` : (rawUserName || 'Guest');
 
   const [token, setToken] = useState("");
   const [serverUrl, setServerUrl] = useState("");
@@ -243,6 +247,8 @@ function RoomContent() {
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (!rawUserName) return; // Prevent connecting as guest
+
     const fetchToken = async () => {
       try {
         const res = await fetch("/api/get-token", {
@@ -263,7 +269,7 @@ function RoomContent() {
       }
     };
     fetchToken();
-  }, [roomId, userName]);
+  }, [roomId, userName, rawUserName]);
 
   useEffect(() => {
     if (chatEndRef.current) {
@@ -271,8 +277,9 @@ function RoomContent() {
     }
   }, [aiChatHistory]);
 
-  // CLOUD AVATAR SYNC SYSTEM
   useEffect(() => {
+    if (!rawUserName) return;
+
     const db = JSON.parse(localStorage.getItem('dspaces_db') || '[]');
     let myName = rawUserName.trim();
     let myAvatar = '🤖';
@@ -295,8 +302,8 @@ function RoomContent() {
           const placeholder = tile.querySelector('.lk-participant-placeholder');
           
           if (nameEl && placeholder) {
-            const rawName = nameEl.textContent || '';
-            const tileName = rawName.replace(' (Host)', '').replace(' (You)', '').trim();
+            const currentRawName = nameEl.textContent || '';
+            const tileName = currentRawName.replace(' (Host)', '').replace(' (You)', '').trim();
             
             const avatar = globalUserMap[tileName] || (db.find((u:any)=>u.name===tileName)?.avatar) || '🤖';
             
@@ -503,6 +510,17 @@ function RoomContent() {
     }
   };
 
+  // Prevent rendering if name is missing (it will redirect automatically)
+  if (!rawUserName) {
+    return (
+      <div className="flex flex-col items-center justify-center h-screen bg-[#04050A] text-white relative">
+         <NetworkBackground />
+         <div className="z-10 animate-spin rounded-full h-14 w-14 border-t-4 border-b-4 border-[#00ff88] mb-6 shadow-[0_0_15px_#00ff88]"></div>
+         <p className="z-10 text-lg font-semibold tracking-widest animate-pulse text-[#00e5ff] drop-shadow-[0_0_10px_#00e5ff]">Securing room access...</p>
+      </div>
+    );
+  }
+
   if (errorMsg) {
     return (
       <div className="flex flex-col items-center justify-center h-screen bg-[#04050A] text-white text-center p-6">
@@ -555,9 +573,6 @@ function RoomContent() {
           <VideoConference />
           <RoomAudioRenderer />
           
-          {/* ========================================== */}
-          {/* INJECTED HOST AND AUDIO CONTROLS */}
-          {/* ========================================== */}
           <HostAndAudioControls isHost={isHost} showDynamicToast={showDynamicToast} />
 
         </LiveKitRoom>
