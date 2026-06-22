@@ -108,23 +108,44 @@ const NetworkBackground = () => {
 };
 
 // ==========================================
-// FIX: Targeted Host Actions & AI Noise Control
+// FIX: Bulletproof Targeted Host Actions & AI Noise Control
 // ==========================================
 const AudioAndHostControls = ({ rawUserName, showDynamicToast }: { rawUserName: string, showDynamicToast: (msg: string) => void }) => {
   const room = useRoomContext();
   const router = useRouter();
   const [aiNoise, setAiNoise] = useState(true);
 
-  // Listen for targeted actions from Host
   useEffect(() => {
     if (!room) return;
 
+    // 1. Setup Global Sender Function for the 3-dot buttons
+    (window as any).sendHostAction = (action: string, target: string) => {
+      if (!room || !room.localParticipant) return;
+      const payload = new TextEncoder().encode(JSON.stringify({ action, target }));
+      
+      try {
+        // Try LiveKit SDK v2 format
+        room.localParticipant.publishData(payload, { reliable: true });
+      } catch (e1) {
+        try {
+          // Try LiveKit SDK v1 format
+          room.localParticipant.publishData(payload, 1 as any);
+        } catch (e2) {
+          console.error("Failed to send command.");
+        }
+      }
+
+      if (action === 'MUTE_USER') showDynamicToast(`🎙️ Muted ${target}`);
+      if (action === 'KICK_USER') showDynamicToast(`🚪 Removed ${target} from room`);
+    };
+
+    // 2. Listen for Incoming Host Commands
     const handleData = (payload: Uint8Array) => {
       try {
         const str = new TextDecoder().decode(payload);
         const msg = JSON.parse(str);
         
-        // Match the target user with my clean name
+        // Find my clean name to see if the target matches me
         const myName = rawUserName.replace(' (Host)', '').replace(' (You)', '').trim();
 
         if (msg.target === myName) {
@@ -136,36 +157,23 @@ const AudioAndHostControls = ({ rawUserName, showDynamicToast }: { rawUserName: 
           }
           if (msg.action === "KICK_USER") {
             showDynamicToast("🛑 The Host has removed you from the room.");
-            setTimeout(() => router.push("/"), 2000);
+            room.disconnect(); // Force disconnect the user
+            setTimeout(() => router.push("/"), 1500); // Send them back to home
           }
         }
       } catch(e) {}
     };
 
+    // Listen to both possible LiveKit event names to guarantee delivery
+    room.on('data', handleData);
     room.on('dataReceived', handleData);
-    return () => { room.off('dataReceived', handleData); };
-  }, [room, rawUserName, router, showDynamicToast]);
 
-  // Listen for actions dispatched from the 3-dot UI buttons
-  useEffect(() => {
-    const handleCustomAction = (e: any) => {
-      if (!room.localParticipant) return;
-      const payload = new TextEncoder().encode(JSON.stringify({ 
-        action: e.detail.action, 
-        target: e.detail.target 
-      }));
-      room.localParticipant.publishData(payload, { reliable: true });
-      
-      if (e.detail.action === 'MUTE_USER') {
-        showDynamicToast(`🎙️ Mute command sent to ${e.detail.target}`);
-      } else if (e.detail.action === 'KICK_USER') {
-        showDynamicToast(`🚪 ${e.detail.target} has been kicked out.`);
-      }
+    return () => { 
+      room.off('data', handleData); 
+      room.off('dataReceived', handleData);
+      delete (window as any).sendHostAction;
     };
-
-    window.addEventListener('host-action', handleCustomAction);
-    return () => window.removeEventListener('host-action', handleCustomAction);
-  }, [room, showDynamicToast]);
+  }, [room, rawUserName, router, showDynamicToast]);
 
   const toggleNoiseSuppression = () => {
     setAiNoise(!aiNoise);
@@ -194,6 +202,7 @@ function RoomContent() {
   const rawUserName = searchParams.get("name");
   const isHost = searchParams.get("ishost") === "true";
 
+  // Prevent connecting as guest directly from URL
   useEffect(() => {
     if (!rawUserName) {
       router.replace(`/?id=${roomId}`);
@@ -256,7 +265,7 @@ function RoomContent() {
     }
   }, [aiChatHistory]);
 
-  // CLOUD AVATAR SYNC + HOST 3-DOT MENU INJECTION
+  // CLOUD AVATAR SYNC + BULLETPROOF 3-DOT MENU INJECTION
   useEffect(() => {
     if (!rawUserName) return;
 
@@ -298,26 +307,26 @@ function RoomContent() {
               }
             }
 
-            // 2. Host 3-Dot Menu Injection (Only inject if I am Host, and this tile is NOT me)
+            // 2. Host 3-Dot Menu Injection
             if (isHost && tileName !== myCleanName) {
-              tile.style.position = 'relative'; // Ensure absolute positioning works
+              tile.style.position = 'relative';
               
               if (!tile.querySelector('.host-control-btn')) {
                 const btnContainer = document.createElement('div');
                 btnContainer.className = 'host-control-btn absolute top-3 right-3 z-50';
-                
-                // Hide dropdown when mouse leaves the button container area
                 btnContainer.setAttribute('onmouseleave', "this.querySelector('.host-dropdown').classList.add('hidden')");
 
+                // Using the new global window.sendHostAction function safely
                 btnContainer.innerHTML = `
                   <button class="bg-black/60 p-2 rounded-lg border border-gray-700 hover:bg-gray-800 text-white transition-all backdrop-blur-md shadow-lg" onclick="this.nextElementSibling.classList.toggle('hidden')">
                     <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 16 16"><path d="M3 8a1.5 1.5 0 113 0 1.5 1.5 0 01-3 0zm5 0a1.5 1.5 0 113 0 1.5 1.5 0 01-3 0zm5 0a1.5 1.5 0 113 0 1.5 1.5 0 01-3 0z"></path></svg>
                   </button>
-                  <div class="host-dropdown hidden absolute right-0 mt-2 w-32 bg-[#0f172a]/95 backdrop-blur-xl border border-gray-700 rounded-xl shadow-[0_10px_25px_rgba(0,0,0,0.8)] overflow-hidden flex flex-col">
-                    <button class="px-4 py-2.5 text-xs text-left font-bold text-gray-200 hover:bg-gray-800 hover:text-[#00e5ff] flex items-center gap-2 transition-colors" onclick="window.dispatchEvent(new CustomEvent('host-action', {detail: {action: 'MUTE_USER', target: '${tileName}'}})); this.parentElement.classList.add('hidden')">
-                      🔇 Mute
+                  <div class="host-dropdown hidden absolute right-0 mt-2 w-36 bg-[#0f172a]/95 backdrop-blur-xl border border-gray-700 rounded-xl shadow-[0_15px_30px_rgba(0,0,0,0.9)] overflow-hidden flex flex-col z-[100]">
+                    <button class="px-4 py-3 text-xs text-left font-bold text-gray-200 hover:bg-gray-800 hover:text-[#00e5ff] flex items-center gap-2 transition-colors" onclick="if(window.sendHostAction) window.sendHostAction('MUTE_USER', '${tileName}'); this.parentElement.classList.add('hidden')">
+                      🔇 Mute ${tileName}
                     </button>
-                    <button class="px-4 py-2.5 text-xs text-left font-bold text-red-400 hover:bg-red-500/20 hover:text-red-300 flex items-center gap-2 border-t border-gray-800 transition-colors" onclick="window.dispatchEvent(new CustomEvent('host-action', {detail: {action: 'KICK_USER', target: '${tileName}'}})); this.parentElement.classList.add('hidden')">
+                    <div class="h-[1px] w-full bg-gray-800/50"></div>
+                    <button class="px-4 py-3 text-xs text-left font-bold text-red-400 hover:bg-red-500/20 hover:text-red-300 flex items-center gap-2 transition-colors" onclick="if(window.sendHostAction) window.sendHostAction('KICK_USER', '${tileName}'); this.parentElement.classList.add('hidden')">
                       🚪 Kick out
                     </button>
                   </div>
