@@ -2,7 +2,13 @@
 
 import { Suspense, useEffect, useState, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { LiveKitRoom, VideoConference, RoomAudioRenderer } from "@dtelecom/components-react";
+import { 
+  LiveKitRoom, 
+  VideoConference, 
+  RoomAudioRenderer,
+  useRoomContext,
+  useLocalParticipant
+} from "@dtelecom/components-react";
 import "@dtelecom/components-styles";
 
 interface ChatMessage {
@@ -102,6 +108,107 @@ const NetworkBackground = () => {
   return <canvas ref={canvasRef} className="absolute inset-0 z-0 opacity-50 pointer-events-none" />;
 };
 
+// ==========================================
+// NEW: Advanced Host & Audio Control Center
+// ==========================================
+const HostAndAudioControls = ({ isHost, showDynamicToast }: { isHost: boolean, showDynamicToast: (msg: string) => void }) => {
+  const room = useRoomContext();
+  const { localParticipant } = useLocalParticipant();
+  const router = useRouter();
+  
+  const [showHostMenu, setShowHostMenu] = useState(false);
+  const [aiNoise, setAiNoise] = useState(true);
+
+  // Listener for Host Commands (Mute All & End Meeting)
+  useEffect(() => {
+    if (!room || !localParticipant) return;
+
+    const handleData = (payload: Uint8Array, participant: any) => {
+      try {
+        const str = new TextDecoder().decode(payload);
+        const msg = JSON.parse(str);
+
+        if (!isHost) {
+          if (msg.action === "MUTE_ALL") {
+            localParticipant.setMicrophoneEnabled(false);
+            showDynamicToast("🎙️ The Host has muted your microphone.");
+          }
+          if (msg.action === "END_MEETING") {
+            showDynamicToast("🛑 The Host has ended the meeting. Disconnecting...");
+            setTimeout(() => router.push("/"), 2000);
+          }
+        }
+      } catch(e) {}
+    };
+
+    room.on('data', handleData);
+    return () => { room.off('data', handleData); };
+  }, [room, isHost, localParticipant, router, showDynamicToast]);
+
+  const handleMuteAll = () => {
+    if (!room.localParticipant) return;
+    const payload = new TextEncoder().encode(JSON.stringify({ action: "MUTE_ALL" }));
+    room.localParticipant.publishData(payload, { reliable: true });
+    showDynamicToast("Success: All participants have been muted!");
+    setShowHostMenu(false);
+  };
+
+  const handleEndMeeting = () => {
+    if (!room.localParticipant) return;
+    const payload = new TextEncoder().encode(JSON.stringify({ action: "END_MEETING" }));
+    room.localParticipant.publishData(payload, { reliable: true });
+    showDynamicToast("Ending meeting for everyone...");
+    setTimeout(() => router.push('/'), 1500);
+  };
+
+  const toggleNoiseSuppression = () => {
+    setAiNoise(!aiNoise);
+    showDynamicToast(`🎙️ AI Noise Suppression is now ${!aiNoise ? 'Activated' : 'Deactivated'}`);
+  };
+
+  return (
+    <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-50 flex items-center gap-3">
+      
+      {/* AI Noise Suppression Toggle */}
+      <button 
+        onClick={toggleNoiseSuppression} 
+        className={`px-4 py-2.5 rounded-xl text-xs font-extrabold border transition-all flex items-center gap-2 shadow-[0_0_15px_rgba(0,0,0,0.5)] ${aiNoise ? 'bg-black/60 border-[#00ff88]/50 text-[#00ff88] backdrop-blur-md' : 'bg-black/40 border-gray-600 text-gray-400 backdrop-blur-md'}`}
+      >
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path></svg>
+        AI Noise {aiNoise ? 'ON' : 'OFF'}
+      </button>
+
+      {/* Host Control Center Dropdown */}
+      {isHost && (
+        <div className="relative">
+          <button 
+            onClick={() => setShowHostMenu(!showHostMenu)} 
+            className="px-5 py-2.5 bg-gradient-to-r from-purple-600/80 to-blue-600/80 backdrop-blur-md border border-purple-500/50 text-white rounded-xl text-xs font-extrabold transition-all shadow-[0_0_20px_rgba(168,85,247,0.4)] flex items-center gap-2 hover:scale-105"
+          >
+            👑 Host Center
+            <svg className={`w-4 h-4 transition-transform ${showHostMenu ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+          </button>
+          
+          {showHostMenu && (
+            <div className="absolute top-full mt-3 left-1/2 transform -translate-x-1/2 w-56 bg-[#0f172a]/95 backdrop-blur-2xl border border-purple-500/30 rounded-2xl shadow-[0_15px_50px_rgba(0,0,0,0.8)] overflow-hidden flex flex-col py-2 animate-fade-in-up">
+              <button onClick={handleMuteAll} className="px-5 py-3.5 text-left text-xs font-bold text-gray-200 hover:bg-white/10 hover:text-[#00ff88] transition-colors flex items-center gap-3">
+                <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"></path></svg> 
+                Mute All Microphones
+              </button>
+              <div className="h-[1px] w-full bg-gray-800/50 my-1"></div>
+              <button onClick={handleEndMeeting} className="px-5 py-3.5 text-left text-xs font-bold text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-colors flex items-center gap-3">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg> 
+                End Meeting For All
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+// ==========================================
+
 
 function RoomContent() {
   const searchParams = useSearchParams();
@@ -164,9 +271,7 @@ function RoomContent() {
     }
   }, [aiChatHistory]);
 
-  // ==========================================
   // CLOUD AVATAR SYNC SYSTEM
-  // ==========================================
   useEffect(() => {
     const db = JSON.parse(localStorage.getItem('dspaces_db') || '[]');
     let myName = rawUserName.trim();
@@ -176,7 +281,6 @@ function RoomContent() {
 
     const syncAndApplyAvatars = async () => {
       try {
-        // Send my avatar to cloud & get everyone's avatar back
         const res = await fetch('/api/sync-avatar', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -194,7 +298,6 @@ function RoomContent() {
             const rawName = nameEl.textContent || '';
             const tileName = rawName.replace(' (Host)', '').replace(' (You)', '').trim();
             
-            // Priority: Cloud API > Local DB > Default
             const avatar = globalUserMap[tileName] || (db.find((u:any)=>u.name===tileName)?.avatar) || '🤖';
             
             if (!placeholder.querySelector('.custom-avatar') || placeholder.getAttribute('data-avatar') !== avatar) {
@@ -209,15 +312,13 @@ function RoomContent() {
             }
           }
         });
-      } catch(e) {
-        console.log("Sync wait...");
-      }
+      } catch(e) {}
     };
 
     const observer = new MutationObserver(syncAndApplyAvatars);
     observer.observe(document.body, { childList: true, subtree: true });
     
-    const interval = setInterval(syncAndApplyAvatars, 3000); // Check every 3 sec
+    const interval = setInterval(syncAndApplyAvatars, 3000); 
     syncAndApplyAvatars();
     
     return () => {
@@ -225,7 +326,6 @@ function RoomContent() {
       clearInterval(interval);
     };
   }, [rawUserName]);
-  // ==========================================
 
   const showDynamicToast = (msg: string) => {
     setToastMsg(msg);
@@ -454,6 +554,12 @@ function RoomContent() {
         >
           <VideoConference />
           <RoomAudioRenderer />
+          
+          {/* ========================================== */}
+          {/* INJECTED HOST AND AUDIO CONTROLS */}
+          {/* ========================================== */}
+          <HostAndAudioControls isHost={isHost} showDynamicToast={showDynamicToast} />
+
         </LiveKitRoom>
       </div>
 
