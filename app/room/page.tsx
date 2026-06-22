@@ -107,17 +107,39 @@ const NetworkBackground = () => {
   return <canvas ref={canvasRef} className="absolute inset-0 z-0 opacity-50 pointer-events-none" />;
 };
 
+
 // ==========================================
-// 100% BULLETPROOF: Cloud Signal API System for Host Controls
+// NEW: Meeting Tracker (Counts Max Participants)
+// ==========================================
+const MeetingTracker = ({ setMaxParticipants }: { setMaxParticipants: (n: any) => void }) => {
+  const room = useRoomContext();
+  useEffect(() => {
+    if (!room) return;
+    const updateCount = () => {
+      // Local participant (1) + remote participants
+      setMaxParticipants((prev: number) => Math.max(prev, room.participants.size + 1));
+    };
+    room.on('participantConnected', updateCount);
+    room.on('participantDisconnected', updateCount);
+    updateCount(); 
+    return () => {
+      room.off('participantConnected', updateCount);
+      room.off('participantDisconnected', updateCount);
+    };
+  }, [room, setMaxParticipants]);
+  return null;
+};
+
+
+// ==========================================
+// BULLETPROOF: Cloud Signal API System for Host Controls
 // ==========================================
 const AudioAndHostControls = ({ rawUserName, showDynamicToast }: { rawUserName: string, showDynamicToast: (msg: string) => void }) => {
   const room = useRoomContext();
-  const router = useRouter();
   const [aiNoise, setAiNoise] = useState(true);
   const lastSignalTime = useRef(0);
 
   useEffect(() => {
-    // SEND COMMAND: Host sends Mute/Kick via Cloud API safely
     (window as any).sendHostAction = async (action: string, target: string) => {
       try {
         await fetch('/api/room-signals', {
@@ -128,11 +150,8 @@ const AudioAndHostControls = ({ rawUserName, showDynamicToast }: { rawUserName: 
         
         if (action === 'MUTE_USER') showDynamicToast(`🎙️ Muted ${target}`);
         if (action === 'KICK_USER') showDynamicToast(`🚪 Removed ${target} from room`);
-      } catch(e) {
-        console.error("Failed to send command.");
-      }
+      } catch(e) {}
     };
-
     return () => { delete (window as any).sendHostAction; };
   }, [showDynamicToast]);
 
@@ -140,7 +159,6 @@ const AudioAndHostControls = ({ rawUserName, showDynamicToast }: { rawUserName: 
     if (!room) return;
     const myName = rawUserName.replace(' (Host)', '').replace(' (You)', '').trim();
 
-    // RECEIVE COMMAND: Everyone listens securely to the Cloud API
     const checkSignals = async () => {
       try {
         const res = await fetch('/api/room-signals');
@@ -159,8 +177,7 @@ const AudioAndHostControls = ({ rawUserName, showDynamicToast }: { rawUserName: 
               }
               if (sig.action === "KICK_USER") {
                 showDynamicToast("🛑 The Host has removed you from the room.");
-                room.disconnect(); 
-                setTimeout(() => router.push("/"), 1500); 
+                room.disconnect(); // This safely triggers the end-screen for the user
               }
             }
           });
@@ -170,7 +187,7 @@ const AudioAndHostControls = ({ rawUserName, showDynamicToast }: { rawUserName: 
 
     const interval = setInterval(checkSignals, 2000);
     return () => clearInterval(interval);
-  }, [room, rawUserName, router, showDynamicToast]);
+  }, [room, rawUserName, showDynamicToast]);
 
   const toggleNoiseSuppression = () => {
     setAiNoise(!aiNoise);
@@ -229,6 +246,14 @@ function RoomContent() {
   const [aiChatHistory, setAiChatHistory] = useState<ChatMessage[]>([]);
   const [loadingChat, setLoadingChat] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // ==========================================
+  // NEW: State for Meeting Stats & Post Screen
+  // ==========================================
+  const [meetingStartTime] = useState(Date.now());
+  const [maxParticipants, setMaxParticipants] = useState(1);
+  const [showPostScreen, setShowPostScreen] = useState(false);
+  const [finalStats, setFinalStats] = useState({ duration: "", participants: 1 });
 
   useEffect(() => {
     if (!rawUserName) return; 
@@ -517,6 +542,23 @@ function RoomContent() {
     }
   };
 
+  // ==========================================
+  // NEW: Handles Disconnect & Calculates Duration
+  // ==========================================
+  const handleRoomDisconnect = () => {
+    const endTime = Date.now();
+    const diffMs = endTime - meetingStartTime;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffSecs = Math.floor((diffMs % 60000) / 1000);
+    
+    let durationStr = "";
+    if (diffMins > 0) durationStr += `${diffMins} min `;
+    durationStr += `${diffSecs} sec`;
+
+    setFinalStats({ duration: durationStr, participants: maxParticipants });
+    setShowPostScreen(true);
+  };
+
   if (!rawUserName) {
     return (
       <div className="flex flex-col items-center justify-center h-screen bg-[#04050A] text-white relative">
@@ -533,6 +575,46 @@ function RoomContent() {
         <h1 className="text-3xl text-red-500 font-bold mb-4">Connection Error</h1>
         <p className="text-gray-300 text-lg">{errorMsg}</p>
         <button onClick={() => router.push("/")} className="mt-8 px-8 py-3 bg-blue-600 hover:bg-blue-500 rounded-xl font-bold transition-all">Go Back Home</button>
+      </div>
+    );
+  }
+
+  // ==========================================
+  // NEW: Post-Meeting Summary Screen UI
+  // ==========================================
+  if (showPostScreen) {
+    return (
+      <div className="flex flex-col items-center justify-center h-screen bg-[#04050A] text-white relative overflow-hidden">
+         <NetworkBackground />
+         <div className="absolute inset-0 bg-black/60 backdrop-blur-md z-0"></div>
+         
+         <div className="z-10 bg-[#0f172a]/90 border border-gray-800/80 rounded-[2rem] p-10 shadow-[0_8px_40px_rgba(0,0,0,0.8)] flex flex-col items-center text-center max-w-md w-full mx-4 transition-all animate-fade-in-up">
+            <div className="w-20 h-20 bg-red-500/10 rounded-full flex items-center justify-center mb-6 border border-red-500/30 shadow-[0_0_25px_rgba(239,68,68,0.2)]">
+              <svg className="w-10 h-10 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 8l2-2m0 0l2-2m-2 2l-2 2m2 2l2 2M5 3a2 2 0 00-2 2v1c0 8.284 6.716 15 15 15h1a2 2 0 002-2v-3.28a1 1 0 00-.684-.948l-4.493-1.498a1 1 0 00-1.21.502l-1.13 2.257a11.042 11.042 0 01-5.516-5.517l2.257-1.128a1 1 0 00.502-1.21L9.228 3.683A1 1 0 008.279 3H5z"></path></svg>
+            </div>
+            
+            <h2 className="text-3xl font-extrabold mb-2 text-white tracking-tight">Meeting Ended</h2>
+            <p className="text-gray-400 text-sm mb-8 font-medium">Your secure connection has been concluded.</p>
+            
+            <div className="w-full flex justify-between items-center bg-black/50 p-5 rounded-2xl border border-gray-800/80 mb-4">
+              <span className="text-gray-400 font-bold text-sm tracking-wide uppercase">Duration</span>
+              <span className="text-[#00e5ff] font-black text-lg">{finalStats.duration}</span>
+            </div>
+            
+            <div className="w-full flex justify-between items-center bg-black/50 p-5 rounded-2xl border border-gray-800/80 mb-8">
+              <span className="text-gray-400 font-bold text-sm tracking-wide uppercase">Participants</span>
+              <span className="text-[#00ff88] font-black text-lg">{finalStats.participants} {finalStats.participants === 1 ? 'Person' : 'People'}</span>
+            </div>
+            
+            <button onClick={() => router.push("/")} className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-black rounded-xl transition-all shadow-lg hover:shadow-blue-500/40 active:scale-[0.98]">
+              Return to Home
+            </button>
+         </div>
+         
+         <style dangerouslySetInnerHTML={{__html: `
+            @keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+            .animate-fade-in-up { animation: fadeInUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+         `}} />
       </div>
     );
   }
@@ -574,8 +656,10 @@ function RoomContent() {
           serverUrl={serverUrl}
           data-lk-theme="default"
           style={{ height: '100%', width: '100%', backgroundColor: 'transparent' }}
-          onDisconnected={() => router.push("/")}
+          onDisconnected={handleRoomDisconnect}
         >
+          {/* Tracker runs silently inside to count participants */}
+          <MeetingTracker setMaxParticipants={setMaxParticipants} />
           <VideoConference />
           <RoomAudioRenderer />
           
