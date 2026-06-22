@@ -108,7 +108,7 @@ const NetworkBackground = () => {
 };
 
 // ==========================================
-// FIX: Bulletproof Targeted Host Actions & AI Noise Control
+// 100% FIXED: Host Control Signals & UI
 // ==========================================
 const AudioAndHostControls = ({ rawUserName, showDynamicToast }: { rawUserName: string, showDynamicToast: (msg: string) => void }) => {
   const room = useRoomContext();
@@ -118,34 +118,31 @@ const AudioAndHostControls = ({ rawUserName, showDynamicToast }: { rawUserName: 
   useEffect(() => {
     if (!room) return;
 
-    // 1. Setup Global Sender Function for the 3-dot buttons
+    // Send Command Logic
     (window as any).sendHostAction = (action: string, target: string) => {
       if (!room || !room.localParticipant) return;
       const payload = new TextEncoder().encode(JSON.stringify({ action, target }));
       
       try {
-        // Try LiveKit SDK v2 format
+        // Try V2 SDK format
         room.localParticipant.publishData(payload, { reliable: true });
-      } catch (e1) {
+      } catch (e) {
         try {
-          // Try LiveKit SDK v1 format
+          // Try V1 SDK format
           room.localParticipant.publishData(payload, 1 as any);
-        } catch (e2) {
-          console.error("Failed to send command.");
-        }
+        } catch (err) {}
       }
 
       if (action === 'MUTE_USER') showDynamicToast(`🎙️ Muted ${target}`);
       if (action === 'KICK_USER') showDynamicToast(`🚪 Removed ${target} from room`);
     };
 
-    // 2. Listen for Incoming Host Commands
+    // Receive Command Logic
     const handleData = (payload: Uint8Array) => {
       try {
         const str = new TextDecoder().decode(payload);
         const msg = JSON.parse(str);
         
-        // Find my clean name to see if the target matches me
         const myName = rawUserName.replace(' (Host)', '').replace(' (You)', '').trim();
 
         if (msg.target === myName) {
@@ -157,14 +154,14 @@ const AudioAndHostControls = ({ rawUserName, showDynamicToast }: { rawUserName: 
           }
           if (msg.action === "KICK_USER") {
             showDynamicToast("🛑 The Host has removed you from the room.");
-            room.disconnect(); // Force disconnect the user
-            setTimeout(() => router.push("/"), 1500); // Send them back to home
+            room.disconnect(); 
+            setTimeout(() => router.push("/"), 1500); 
           }
         }
       } catch(e) {}
     };
 
-    // Listen to both possible LiveKit event names to guarantee delivery
+    // Support both new and old LiveKit versions
     room.on('data', handleData);
     room.on('dataReceived', handleData);
 
@@ -202,7 +199,6 @@ function RoomContent() {
   const rawUserName = searchParams.get("name");
   const isHost = searchParams.get("ishost") === "true";
 
-  // Prevent connecting as guest directly from URL
   useEffect(() => {
     if (!rawUserName) {
       router.replace(`/?id=${roomId}`);
@@ -265,7 +261,7 @@ function RoomContent() {
     }
   }, [aiChatHistory]);
 
-  // CLOUD AVATAR SYNC + BULLETPROOF 3-DOT MENU INJECTION
+  // CLOUD AVATAR SYNC + HOST 3-DOT MENU
   useEffect(() => {
     if (!rawUserName) return;
 
@@ -294,7 +290,7 @@ function RoomContent() {
             const currentRawName = nameEl.textContent || '';
             const tileName = currentRawName.replace(' (Host)', '').replace(' (You)', '').trim();
             
-            // 1. Avatar Injection
+            // Apply Avatar
             const avatar = globalUserMap[tileName] || (db.find((u:any)=>u.name===tileName)?.avatar) || '🤖';
             if (!placeholder.querySelector('.custom-avatar') || placeholder.getAttribute('data-avatar') !== avatar) {
               placeholder.innerHTML = ''; 
@@ -307,26 +303,24 @@ function RoomContent() {
               }
             }
 
-            // 2. Host 3-Dot Menu Injection
+            // Apply Host Controls (3-Dots)
             if (isHost && tileName !== myCleanName) {
               tile.style.position = 'relative';
-              
               if (!tile.querySelector('.host-control-btn')) {
                 const btnContainer = document.createElement('div');
                 btnContainer.className = 'host-control-btn absolute top-3 right-3 z-50';
                 btnContainer.setAttribute('onmouseleave', "this.querySelector('.host-dropdown').classList.add('hidden')");
 
-                // Using the new global window.sendHostAction function safely
                 btnContainer.innerHTML = `
-                  <button class="bg-black/60 p-2 rounded-lg border border-gray-700 hover:bg-gray-800 text-white transition-all backdrop-blur-md shadow-lg" onclick="this.nextElementSibling.classList.toggle('hidden')">
+                  <button class="bg-black/80 p-2 rounded-lg border border-gray-600 hover:bg-gray-700 text-white transition-all backdrop-blur-md shadow-lg pointer-events-auto" onclick="this.nextElementSibling.classList.toggle('hidden')">
                     <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 16 16"><path d="M3 8a1.5 1.5 0 113 0 1.5 1.5 0 01-3 0zm5 0a1.5 1.5 0 113 0 1.5 1.5 0 01-3 0zm5 0a1.5 1.5 0 113 0 1.5 1.5 0 01-3 0z"></path></svg>
                   </button>
-                  <div class="host-dropdown hidden absolute right-0 mt-2 w-36 bg-[#0f172a]/95 backdrop-blur-xl border border-gray-700 rounded-xl shadow-[0_15px_30px_rgba(0,0,0,0.9)] overflow-hidden flex flex-col z-[100]">
-                    <button class="px-4 py-3 text-xs text-left font-bold text-gray-200 hover:bg-gray-800 hover:text-[#00e5ff] flex items-center gap-2 transition-colors" onclick="if(window.sendHostAction) window.sendHostAction('MUTE_USER', '${tileName}'); this.parentElement.classList.add('hidden')">
-                      🔇 Mute ${tileName}
+                  <div class="host-dropdown hidden absolute right-0 mt-2 w-36 bg-[#0f172a]/95 backdrop-blur-xl border border-gray-700 rounded-xl shadow-[0_15px_30px_rgba(0,0,0,0.9)] overflow-hidden flex flex-col z-[9999] pointer-events-auto">
+                    <button class="px-4 py-3 text-xs text-left font-bold text-gray-200 hover:bg-gray-800 hover:text-[#00e5ff] flex items-center gap-2 transition-colors w-full" onclick="if(window.sendHostAction) window.sendHostAction('MUTE_USER', '${tileName}'); this.parentElement.classList.add('hidden')">
+                      🔇 Mute
                     </button>
                     <div class="h-[1px] w-full bg-gray-800/50"></div>
-                    <button class="px-4 py-3 text-xs text-left font-bold text-red-400 hover:bg-red-500/20 hover:text-red-300 flex items-center gap-2 transition-colors" onclick="if(window.sendHostAction) window.sendHostAction('KICK_USER', '${tileName}'); this.parentElement.classList.add('hidden')">
+                    <button class="px-4 py-3 text-xs text-left font-bold text-red-400 hover:bg-red-500/20 hover:text-red-300 flex items-center gap-2 transition-colors w-full" onclick="if(window.sendHostAction) window.sendHostAction('KICK_USER', '${tileName}'); this.parentElement.classList.add('hidden')">
                       🚪 Kick out
                     </button>
                   </div>
@@ -394,6 +388,9 @@ function RoomContent() {
     showDynamicToast("Data cleared successfully!");
   };
 
+  // ==========================================
+  // 100% FIXED: Speech Logic (No More "Hello Hello" loop)
+  // ==========================================
   const handleStartAI = () => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
@@ -405,31 +402,27 @@ function RoomContent() {
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.lang = languageMap[aiLanguage] || "en-US"; 
+    
+    let currentSessionText = "";
 
     recognition.onresult = (event: any) => {
-      let interimText = "";
-      let finalAdded = "";
-
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        if (event.results[i].isFinal) {
-          finalAdded += event.results[i][0].transcript + " ";
-        } else {
-          interimText += event.results[i][0].transcript;
-        }
+      let text = "";
+      for (let i = 0; i < event.results.length; i++) {
+        text += event.results[i][0].transcript;
       }
-
-      if (finalAdded) {
-        fullTranscriptRef.current += finalAdded;
-      }
-      
-      setTranscript(fullTranscriptRef.current + interimText);
+      currentSessionText = text;
+      // Append safely without duplicating history
+      setTranscript((fullTranscriptRef.current + " " + text).trim());
     };
 
     recognition.onend = () => {
+      // Save completed text before restarting
+      if (currentSessionText) {
+        fullTranscriptRef.current += " " + currentSessionText;
+        currentSessionText = "";
+      }
       if (isRecordingRef.current) {
-        setTimeout(() => {
-          try { recognition.start(); } catch (e) { console.log("Mic restart blocked."); }
-        }, 350); 
+        try { recognition.start(); } catch (e) {}
       }
     };
 
@@ -487,7 +480,7 @@ function RoomContent() {
             const updatedHistory = [newMeeting, ...existingHistory].slice(0, 10);
             localStorage.setItem(historyKey, JSON.stringify(updatedHistory));
           }
-        } catch(e) { console.error("Could not save history"); }
+        } catch(e) {}
 
       } else {
         setSummary(`❌ AI Error: ${data.error}`);
