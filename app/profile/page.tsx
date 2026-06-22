@@ -39,7 +39,6 @@ export default function ProfilePage() {
     setTimeout(() => setToastMsg(""), 4000);
   };
 
-  // Keep all original logic untouched
   useEffect(() => {
     const sessionId = localStorage.getItem("dspaces_active_session");
     if (!sessionId) {
@@ -88,6 +87,7 @@ export default function ProfilePage() {
     }
   }, [connected, publicKey, myAcc, disconnect]);
 
+  // FIX: This is the function that was mismatched in the button click
   const handleSendLinkOTP = async () => {
     const emailInput = linkEmailInput.trim();
     if (!emailInput) return showToast("Please enter an email address.");
@@ -160,7 +160,6 @@ export default function ProfilePage() {
     const updatedDb = db.map((a: any) => (a.email === myAcc.email && a.wallet === myAcc.wallet) ? { ...a, name: userName, avatar: avatar } : a);
     saveDb(updatedDb);
     
-    // Sync to API to update across active rooms instantly
     fetch('/api/sync-avatar', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -183,11 +182,9 @@ export default function ProfilePage() {
   return (
     <main className="min-h-screen bg-[#030712] text-white font-sans relative overflow-x-hidden flex flex-col">
       
-      {/* Dynamic Glowing Backgrounds */}
       <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-[#00e5ff]/5 blur-[120px] rounded-full pointer-events-none"></div>
       <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-[#00ff88]/5 blur-[120px] rounded-full pointer-events-none"></div>
       
-      {/* Toast Notification */}
       {toastMsg && (
         <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[1000] bg-[#0f172a] border border-[#00e5ff]/30 text-white px-6 py-3 rounded-full shadow-[0_0_20px_rgba(0,229,255,0.2)] font-semibold text-sm animate-fade-in-up flex items-center gap-3">
           <span className="w-2 h-2 rounded-full bg-[#00ff88] animate-pulse"></span>
@@ -195,7 +192,6 @@ export default function ProfilePage() {
         </div>
       )}
 
-      {/* Header */}
       <nav className="relative z-10 flex justify-between items-center px-6 sm:px-10 py-5 border-b border-gray-800/50 bg-black/20 backdrop-blur-md">
         <h1 onClick={() => router.push('/')} className="text-2xl font-extrabold cursor-pointer bg-gradient-to-r from-[#00e5ff] to-[#00ff88] bg-clip-text text-transparent drop-shadow-md transition-transform hover:scale-105">
           dSpaces
@@ -205,15 +201,11 @@ export default function ProfilePage() {
         </button>
       </nav>
 
-      {/* Main Content Area */}
       <section className="relative z-10 max-w-5xl mx-auto px-4 py-12 flex flex-col md:flex-row gap-8 flex-grow w-full">
         
-        {/* Left Column (Profile & Linked Accounts) */}
         <div className="w-full md:w-1/3 flex flex-col gap-6">
           
-          {/* Profile Card */}
           <div className="bg-[#0f172a]/80 backdrop-blur-xl border border-gray-800/80 hover:border-[#00e5ff]/30 rounded-[2rem] p-8 flex flex-col items-center text-center shadow-[0_8px_30px_rgb(0,0,0,0.5)] transition-all">
-            
             <div className="relative w-28 h-28 flex items-center justify-center rounded-full mb-5 border-2 border-[#00e5ff] shadow-[0_0_25px_rgba(0,229,255,0.3)] bg-gray-900 group overflow-hidden">
               {avatar.startsWith("data:image") ? (
                 <img src={avatar} alt="Profile" className="w-full h-full object-cover" />
@@ -260,11 +252,9 @@ export default function ProfilePage() {
             )}
           </div>
 
-          {/* Linked Accounts Card */}
           <div className="bg-[#0f172a]/80 backdrop-blur-xl border border-gray-800/80 rounded-[2rem] p-6 shadow-[0_8px_30px_rgb(0,0,0,0.5)] flex flex-col gap-4">
             <h3 className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-2 pl-2">Linked Accounts</h3>
             
-            {/* Email Box */}
             <div className="flex flex-col bg-black/40 rounded-2xl border border-gray-800/80 overflow-hidden">
               <div className="flex items-center justify-between p-4">
                 <div className="flex items-center gap-3">
@@ -286,7 +276,8 @@ export default function ProfilePage() {
                   {!linkOtpSent ? (
                     <>
                       <input type="email" placeholder="Enter your email" value={linkEmailInput} onChange={(e)=>setLinkEmailInput(e.target.value)} className="w-full bg-black/50 border border-gray-700 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-blue-500 text-white" />
-                      <button onClick={handleSendOTP} disabled={loading} className="w-full bg-blue-600 hover:bg-blue-500 text-sm py-2.5 rounded-xl font-bold transition-colors">{loading ? "Wait..." : "Send Secure OTP"}</button>
+                      {/* FIX: Corrected onClick handler here */}
+                      <button onClick={handleSendLinkOTP} disabled={loading} className="w-full bg-blue-600 hover:bg-blue-500 text-sm py-2.5 rounded-xl font-bold transition-colors">{loading ? "Wait..." : "Send Secure OTP"}</button>
                     </>
                   ) : (
                     <>
@@ -298,7 +289,6 @@ export default function ProfilePage() {
               )}
             </div>
 
-            {/* Wallet Box */}
             <div className="flex items-center justify-between p-4 bg-black/40 rounded-2xl border border-gray-800/80">
               <div className="flex items-center gap-3">
                 <div className="bg-purple-500/10 p-2.5 rounded-xl text-purple-400 border border-purple-500/20">
@@ -320,7 +310,6 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        {/* Right Column (History) */}
         <div className="w-full md:w-2/3 flex flex-col">
           <div className="bg-[#0f172a]/80 backdrop-blur-xl border border-gray-800/80 rounded-[2rem] p-6 sm:p-10 shadow-[0_8px_30px_rgb(0,0,0,0.5)] flex-grow">
             
@@ -367,32 +356,23 @@ export default function ProfilePage() {
         </div>
       </section>
 
-      {/* ==========================================
-          NEW: CUSTOM FOOTER SECTION
-          ========================================== */}
       <footer className="w-full mt-auto py-8 flex flex-col items-center justify-center gap-5 border-t border-gray-800/60 bg-black/40 backdrop-blur-md relative z-10">
         <h3 className="text-gray-500 text-xs font-black tracking-[0.25em] uppercase">
           BUILD BY <span className="text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.4)]">JUBAYIR69</span>
         </h3>
         <div className="flex items-center gap-5">
-          {/* Twitter (X) */}
           <a href="https://x.com/jubayirhaider90" target="_blank" rel="noopener noreferrer" className="w-12 h-12 rounded-full bg-[#0f172a] border border-gray-700 flex items-center justify-center text-gray-400 hover:text-white hover:border-white hover:bg-black hover:shadow-[0_0_15px_rgba(255,255,255,0.3)] transition-all duration-300 hover:-translate-y-1 group">
             <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 group-hover:scale-110 transition-transform"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.005 4.15H5.059z"/></svg>
           </a>
-          
-          {/* GitHub */}
           <a href="https://github.com/jubayir-hub-69" target="_blank" rel="noopener noreferrer" className="w-12 h-12 rounded-full bg-[#0f172a] border border-gray-700 flex items-center justify-center text-gray-400 hover:text-black hover:border-white hover:bg-white hover:shadow-[0_0_20px_rgba(255,255,255,0.5)] transition-all duration-300 hover:-translate-y-1 group">
             <svg viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6 group-hover:scale-110 transition-transform"><path d="M12 2A10 10 0 002 12c0 4.42 2.87 8.17 6.84 9.5.5.08.66-.23.66-.5v-1.69c-2.77.6-3.36-1.34-3.36-1.34-.45-1.15-1.11-1.46-1.11-1.46-.9-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.87 1.52 2.34 1.07 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.92 0-1.11.38-2 1.03-2.71-.1-.25-.45-1.29.1-2.64 0 0 .84-.27 2.75 1.02.79-.22 1.65-.33 2.5-.33.85 0 1.71.11 2.5.33 1.91-1.29 2.75-1.02 2.75-1.02.55 1.35.2 2.39.1 2.64.65.71 1.03 1.6 1.03 2.71 0 3.82-2.34 4.66-4.57 4.91.36.31.69.92.69 1.85V21c0 .27.16.59.67.5C19.14 20.16 22 16.42 22 12A10 10 0 0012 2z"/></svg>
           </a>
-
-          {/* Discord */}
           <a href="https://discordapp.com/users/775330417414635530" target="_blank" rel="noopener noreferrer" className="w-12 h-12 rounded-full bg-[#0f172a] border border-gray-700 flex items-center justify-center text-gray-400 hover:text-white hover:border-[#5865F2] hover:bg-[#5865F2] hover:shadow-[0_0_20px_rgba(88,101,242,0.5)] transition-all duration-300 hover:-translate-y-1 group">
             <svg viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6 group-hover:scale-110 transition-transform"><path d="M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189z"/></svg>
           </a>
         </div>
       </footer>
 
-      {/* AI Summary Popup - Modernized */}
       {viewSummary && (
         <div className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-[#0f172a] border border-[#00e5ff]/30 rounded-3xl p-8 max-w-2xl w-full shadow-[0_0_50px_rgba(0,229,255,0.15)] transform transition-all">
