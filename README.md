@@ -126,7 +126,7 @@ NEXTAUTH_SECRET=your_random_secret_string
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000)
+Open (https://dspaces.vercel.app/)
 
 ---
 
