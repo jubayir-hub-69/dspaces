@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState, useEffect, useRef } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
 import "@solana/wallet-adapter-react-ui/styles.css";
+import { AboutDspacesButton, AboutDspacesModal } from "../components/AboutDspacesModal";
 
 // ==========================================
 // NEW: Animated Connected Nodes Background
@@ -118,6 +119,7 @@ export default function Home() {
   const [statusMsg, setStatusMsg] = useState("");
   const [isDark, setIsDark] = useState(true);
   const [toastMsg, setToastMsg] = useState("");
+  const [aboutOpen, setAboutOpen] = useState(false);
 
   const showToast = (msg: string) => {
     setToastMsg(msg);
@@ -282,6 +284,7 @@ export default function Home() {
       <nav className={`relative z-50 flex justify-between items-center px-4 sm:px-8 py-5 border-b backdrop-blur-md ${isDark ? 'border-white/5 bg-black/20' : 'border-gray-200 bg-white/40'}`}>
         <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 bg-clip-text text-transparent drop-shadow-sm cursor-pointer hover:scale-105 transition-transform">dSpaces</h1>
         <div className="flex items-center gap-3 sm:gap-4">
+          <AboutDspacesButton onClick={() => setAboutOpen(true)} isDark={isDark} />
           <button onClick={() => setIsDark(!isDark)} className={`p-2 rounded-full transition-colors ${isDark ? 'bg-gray-800 text-yellow-400 hover:bg-gray-700' : 'bg-gray-200 text-gray-800 hover:bg-gray-300'}`}>
             {isDark ? <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4.22 4.22a1 1 0 011.415 0l.708.708a1 1 0 01-1.414 1.414l-.708-.708a1 1 0 010-1.414zM18 10a1 1 0 01-1 1h-1a1 1 0 110-2h1a1 1 0 011 1zM15.657 14.243a1 1 0 010 1.415l-.708.708a1 1 0 01-1.414-1.414l.708-.708a1 1 0 011.414 0zM10 18a1 1 0 01-1-1v-1a1 1 0 112 0v1a1 1 0 01-1 1zm-4.22-4.22a1 1 0 01-1.415 0l-.708-.708a1 1 0 011.414-1.414l.708.708a1 1 0 010 1.414zM2 10a1 1 0 011-1h1a1 1 0 110 2H3a1 1 0 01-1-1zm2.343-4.243a1 1 0 010-1.415l.708-.708a1 1 0 011.414 1.414l-.708.708a1 1 0 01-1.414 0zM10 5a5 5 0 100 10 5 5 0 000-10z"></path></svg> : <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"></path></svg>}
           </button>
@@ -326,6 +329,9 @@ export default function Home() {
           <div className="mb-8">
             <h1 className="text-4xl sm:text-6xl font-black mb-4 tracking-tight">The Future of <span className="bg-gradient-to-r from-blue-500 to-purple-500 bg-clip-text text-transparent">Web3 Meetings</span></h1>
             <p className={`text-sm sm:text-base max-w-lg mx-auto ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Connect your Solana wallet or verify your email to access secure video conferencing.</p>
+            <button type="button" onClick={() => setAboutOpen(true)} className="mt-4 text-sm font-bold text-blue-400 hover:text-blue-300 underline underline-offset-4">
+              New here? See how dSpaces works
+            </button>
           </div>
         )}
 
@@ -395,6 +401,8 @@ export default function Home() {
           )}
         </div>
       </section>
+
+      <AboutDspacesModal open={aboutOpen} onClose={() => setAboutOpen(false)} isDark={isDark} />
     </main>
   );
 }

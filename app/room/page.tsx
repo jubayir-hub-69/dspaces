@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState, useRef } from "react";
+import { Suspense, useEffect, useState, useRef, useCallback, useMemo, memo, type CSSProperties } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { 
   LiveKitRoom, 
@@ -9,6 +9,8 @@ import {
   useRoomContext
 } from "@dtelecom/components-react";
 import "@dtelecom/components-styles";
+import "./room-layout.css";
+import { AboutDspacesButton, AboutDspacesModal } from "../../components/AboutDspacesModal";
 
 interface ChatMessage {
   sender: "user" | "ai";
@@ -23,7 +25,27 @@ const languageMap: Record<string, string> = {
   "Hindi": "hi-IN"
 };
 
-const NetworkBackground = () => {
+const isLikelyMobileDevice = () => {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent || "";
+  return /Mobi|Android|iPhone|iPod|iPad|webOS|IEMobile|Opera Mini/i.test(ua)
+    || (navigator.maxTouchPoints > 1 && /Macintosh/.test(ua));
+};
+
+const getSpeechRecognitionCtor = () => {
+  if (typeof window === "undefined") return null;
+  return (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition || null;
+};
+
+const LIVEKIT_ROOM_STYLE: CSSProperties = {
+  height: "100%",
+  width: "100%",
+  backgroundColor: "transparent",
+  minHeight: 0,
+  overflow: "hidden",
+};
+
+const NetworkBackground = memo(function NetworkBackground() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -32,7 +54,8 @@ const NetworkBackground = () => {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    let animationFrameId: number;
+    let animationFrameId = 0;
+    let stopped = false;
     const particles: any[] = [];
     const numParticles = window.innerWidth < 768 ? 40 : 80;
 
@@ -75,6 +98,7 @@ const NetworkBackground = () => {
     }
 
     const animate = () => {
+      if (stopped) return;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       for (let i = 0; i < numParticles; i++) {
         particles[i].update();
@@ -96,18 +120,30 @@ const NetworkBackground = () => {
       }
       animationFrameId = requestAnimationFrame(animate);
     };
+
+    const onVisibility = () => {
+      if (document.hidden) {
+        cancelAnimationFrame(animationFrameId);
+        return;
+      }
+      cancelAnimationFrame(animationFrameId);
+      animationFrameId = requestAnimationFrame(animate);
+    };
     
     animate();
+    document.addEventListener('visibilitychange', onVisibility);
     return () => {
+      stopped = true;
       window.removeEventListener('resize', resize);
+      document.removeEventListener('visibilitychange', onVisibility);
       cancelAnimationFrame(animationFrameId);
     };
   }, []);
 
   return <canvas ref={canvasRef} className="absolute inset-0 z-0 opacity-50 pointer-events-none" />;
-};
+});
 
-const MeetingTracker = ({ setMaxParticipants }: { setMaxParticipants: (n: any) => void }) => {
+const MeetingTracker = memo(function MeetingTracker({ setMaxParticipants }: { setMaxParticipants: (n: any) => void }) {
   const room = useRoomContext();
   useEffect(() => {
     if (!room) return;
@@ -123,12 +159,130 @@ const MeetingTracker = ({ setMaxParticipants }: { setMaxParticipants: (n: any) =
     };
   }, [room, setMaxParticipants]);
   return null;
+});
+
+const SCREEN_SHARE_UNSUPPORTED_MSG = "Screen sharing is not supported on this mobile browser";
+
+const isScreenShareSupported = () => {
+  if (typeof navigator === "undefined") return false;
+  const mediaDevices = navigator.mediaDevices as MediaDevices | undefined;
+  return !!mediaDevices && typeof mediaDevices.getDisplayMedia === "function";
 };
 
-const AudioAndHostControls = ({ rawUserName, showDynamicToast }: { rawUserName: string, showDynamicToast: (msg: string) => void }) => {
+const ScreenShareGuard = memo(function ScreenShareGuard({ showDynamicToast }: { showDynamicToast: (msg: string) => void }) {
+  const toastRef = useRef(showDynamicToast);
+  toastRef.current = showDynamicToast;
+
+  useEffect(() => {
+    let lastToastAt = 0;
+    const notifyUnsupported = () => {
+      const now = Date.now();
+      if (now - lastToastAt < 800) return;
+      lastToastAt = now;
+      toastRef.current(SCREEN_SHARE_UNSUPPORTED_MSG);
+    };
+
+    const interceptShareClick = (event: Event) => {
+      const target = event.target as HTMLElement | null;
+      if (!target?.closest) return;
+      if (!target.closest("[data-lk-source='screen_share']")) return;
+      if (isScreenShareSupported()) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      notifyUnsupported();
+    };
+
+    document.addEventListener("click", interceptShareClick, true);
+
+    const mediaDevices = typeof navigator !== "undefined" ? navigator.mediaDevices : undefined;
+    const originalGetDisplayMedia = mediaDevices?.getDisplayMedia;
+    if (mediaDevices && originalGetDisplayMedia && !(mediaDevices as MediaDevices & { __dspacesShareWrapped?: boolean }).__dspacesShareWrapped) {
+      const wrappedGetDisplayMedia = ((constraints?: DisplayMediaStreamOptions) => {
+        return originalGetDisplayMedia.call(mediaDevices, constraints).catch((err: unknown) => {
+          const name = (err as { name?: string })?.name || "";
+          if (name === "NotSupportedError") {
+            notifyUnsupported();
+          }
+          throw err;
+        });
+      }) as typeof mediaDevices.getDisplayMedia;
+      (mediaDevices as MediaDevices & { __dspacesShareWrapped?: boolean }).__dspacesShareWrapped = true;
+      mediaDevices.getDisplayMedia = wrappedGetDisplayMedia;
+    }
+
+    const SCREEN_SHARE_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="16" fill="none" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M0 2.75A2.75 2.75 0 0 1 2.75 0h14.5A2.75 2.75 0 0 1 20 2.75v10.5A2.75 2.75 0 0 1 17.25 16H2.75A2.75 2.75 0 0 1 0 13.25zM2.75 1.5c-.69 0-1.25.56-1.25 1.25v10.5c0 .69.56 1.25 1.25 1.25h14.5c.69 0 1.25-.56 1.25-1.25V2.75c0-.69-.56-1.25-1.25-1.25z" clip-rule="evenodd"/><path fill="currentColor" fill-rule="evenodd" d="M9.47 4.22a.75.75 0 0 1 1.06 0l2.25 2.25a.75.75 0 0 1-1.06 1.06l-.97-.97v4.69a.75.75 0 0 1-1.5 0V6.56l-.97.97a.75.75 0 0 1-1.06-1.06z" clip-rule="evenodd"/></svg>`;
+
+    const syncFallbackButton = () => {
+      const bar = document.querySelector(".lk-control-bar");
+      if (!bar) return;
+
+      const nativeBtn = bar.querySelector("[data-lk-source='screen_share']");
+      const existingFallback = bar.querySelector("[data-dspaces-screenshare-fallback]");
+
+      if (isScreenShareSupported() || nativeBtn) {
+        existingFallback?.remove();
+        return;
+      }
+
+      if (existingFallback) return;
+
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "lk-button";
+      btn.setAttribute("data-dspaces-screenshare-fallback", "true");
+      btn.setAttribute("aria-label", "Share Screen");
+      btn.innerHTML = `${SCREEN_SHARE_ICON}<span class="dspaces-screenshare-label">Share Screen</span>`;
+      btn.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        notifyUnsupported();
+      });
+
+      const insertBefore = bar.querySelector(".lk-chat-toggle") || bar.querySelector(".lk-disconnect-button");
+      if (insertBefore) bar.insertBefore(btn, insertBefore);
+      else bar.appendChild(btn);
+    };
+
+    let observer: MutationObserver | null = null;
+    let debounceId: ReturnType<typeof setTimeout> | null = null;
+
+    if (!isScreenShareSupported()) {
+      syncFallbackButton();
+      observer = new MutationObserver(() => {
+        if (debounceId != null) return;
+        debounceId = setTimeout(() => {
+          debounceId = null;
+          syncFallbackButton();
+        }, 300);
+      });
+      observer.observe(document.body, { childList: true, subtree: true });
+    }
+
+    return () => {
+      document.removeEventListener("click", interceptShareClick, true);
+      observer?.disconnect();
+      if (debounceId != null) clearTimeout(debounceId);
+      document.querySelector("[data-dspaces-screenshare-fallback]")?.remove();
+      if (mediaDevices && originalGetDisplayMedia) {
+        mediaDevices.getDisplayMedia = originalGetDisplayMedia;
+        delete (mediaDevices as MediaDevices & { __dspacesShareWrapped?: boolean }).__dspacesShareWrapped;
+      }
+    };
+  }, []);
+
+  return null;
+});
+
+const AudioAndHostControls = memo(function AudioAndHostControls({ rawUserName, showDynamicToast }: { rawUserName: string, showDynamicToast: (msg: string) => void }) {
   const room = useRoomContext();
   const [aiNoise, setAiNoise] = useState(true);
   const lastSignalTime = useRef(0);
+  const toastRef = useRef(showDynamicToast);
+  toastRef.current = showDynamicToast;
+  const aiNoiseRef = useRef(aiNoise);
+  aiNoiseRef.current = aiNoise;
 
   useEffect(() => {
     (window as any).sendHostAction = async (action: string, target: string) => {
@@ -139,12 +293,12 @@ const AudioAndHostControls = ({ rawUserName, showDynamicToast }: { rawUserName: 
           body: JSON.stringify({ action, target })
         });
         
-        if (action === 'MUTE_USER') showDynamicToast(`🎙️ Muted ${target}`);
-        if (action === 'KICK_USER') showDynamicToast(`🚪 Removed ${target} from room`);
+        if (action === 'MUTE_USER') toastRef.current(`🎙️ Muted ${target}`);
+        if (action === 'KICK_USER') toastRef.current(`🚪 Removed ${target} from room`);
       } catch(e) {}
     };
     return () => { delete (window as any).sendHostAction; };
-  }, [showDynamicToast]);
+  }, []);
 
   useEffect(() => {
     if (!room) return;
@@ -164,10 +318,10 @@ const AudioAndHostControls = ({ rawUserName, showDynamicToast }: { rawUserName: 
                 if (room.localParticipant) {
                   room.localParticipant.setMicrophoneEnabled(false);
                 }
-                showDynamicToast("🎙️ The Host has muted your microphone.");
+                toastRef.current("🎙️ The Host has muted your microphone.");
               }
               if (sig.action === "KICK_USER") {
-                showDynamicToast("🛑 The Host has removed you from the room.");
+                toastRef.current("🛑 The Host has removed you from the room.");
                 room.disconnect(); 
               }
             }
@@ -178,12 +332,13 @@ const AudioAndHostControls = ({ rawUserName, showDynamicToast }: { rawUserName: 
 
     const interval = setInterval(checkSignals, 2000);
     return () => clearInterval(interval);
-  }, [room, rawUserName, showDynamicToast]);
+  }, [room, rawUserName]);
 
-  const toggleNoiseSuppression = () => {
-    setAiNoise(!aiNoise);
-    showDynamicToast(`🎙️ AI Noise Suppression is now ${!aiNoise ? 'Activated' : 'Deactivated'}`);
-  };
+  const toggleNoiseSuppression = useCallback(() => {
+    const next = !aiNoiseRef.current;
+    setAiNoise(next);
+    toastRef.current(`🎙️ AI Noise Suppression is now ${next ? 'Activated' : 'Deactivated'}`);
+  }, []);
 
   return (
     <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-50 flex items-center gap-3">
@@ -196,8 +351,46 @@ const AudioAndHostControls = ({ rawUserName, showDynamicToast }: { rawUserName: 
       </button>
     </div>
   );
+});
+
+type RoomCallStageProps = {
+  token: string;
+  serverUrl: string;
+  rawUserName: string;
+  onDisconnected: () => void;
+  showDynamicToast: (msg: string) => void;
+  setMaxParticipants: (n: any) => void;
 };
 
+const RoomCallStage = memo(function RoomCallStage({
+  token,
+  serverUrl,
+  rawUserName,
+  onDisconnected,
+  showDynamicToast,
+  setMaxParticipants,
+}: RoomCallStageProps) {
+  return (
+    <div className="flex-1 w-full min-h-0 relative z-10 bg-transparent overflow-hidden flex flex-col">
+      <LiveKitRoom
+        video={true}
+        audio={true}
+        token={token}
+        serverUrl={serverUrl}
+        data-lk-theme="default"
+        className="h-full min-h-0 overflow-hidden"
+        style={LIVEKIT_ROOM_STYLE}
+        onDisconnected={onDisconnected}
+      >
+        <MeetingTracker setMaxParticipants={setMaxParticipants} />
+        <VideoConference />
+        <RoomAudioRenderer />
+        <ScreenShareGuard showDynamicToast={showDynamicToast} />
+        <AudioAndHostControls rawUserName={rawUserName} showDynamicToast={showDynamicToast} />
+      </LiveKitRoom>
+    </div>
+  );
+});
 
 function RoomContent() {
   const searchParams = useSearchParams();
@@ -213,7 +406,10 @@ function RoomContent() {
     }
   }, [rawUserName, roomId, router]);
 
-  const userName = isHost ? `${rawUserName || 'Guest'} (Host)` : (rawUserName || 'Guest');
+  const userName = useMemo(
+    () => (isHost ? `${rawUserName || 'Guest'} (Host)` : (rawUserName || 'Guest')),
+    [isHost, rawUserName]
+  );
 
   const [token, setToken] = useState("");
   const [serverUrl, setServerUrl] = useState("");
@@ -227,12 +423,21 @@ function RoomContent() {
   const recognitionRef = useRef<any>(null);
   const isRecordingRef = useRef(false);
   const fullTranscriptRef = useRef("");
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const micStreamRef = useRef<MediaStream | null>(null);
+  const micAudioNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const bootSpeechRecognitionRef = useRef<() => boolean>(() => false);
+  const translatorGenerationRef = useRef(0);
+  const [aiListenPaused, setAiListenPaused] = useState(false);
 
   const [showToast, setShowToast] = useState(false);
   const [toastMsg, setToastMsg] = useState("");
   const [isAIPanelOpen, setIsAIPanelOpen] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
 
   const [aiLanguage, setAiLanguage] = useState("English");
+  const aiLanguageRef = useRef(aiLanguage);
+  aiLanguageRef.current = aiLanguage;
   const [aiChatInput, setAiChatInput] = useState("");
   const [aiChatHistory, setAiChatHistory] = useState<ChatMessage[]>([]);
   const [loadingChat, setLoadingChat] = useState(false);
@@ -240,6 +445,9 @@ function RoomContent() {
 
   const [meetingStartTime] = useState(Date.now());
   const [maxParticipants, setMaxParticipants] = useState(1);
+  const maxParticipantsRef = useRef(maxParticipants);
+  maxParticipantsRef.current = maxParticipants;
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showPostScreen, setShowPostScreen] = useState(false);
   const [finalStats, setFinalStats] = useState({ duration: "", participants: 1 });
 
@@ -351,17 +559,56 @@ function RoomContent() {
     return () => clearInterval(interval);
   }, [rawUserName, isHost]);
 
-  const showDynamicToast = (msg: string) => {
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.hidden || !isRecordingRef.current) return;
+      try {
+        recognitionRef.current?.start();
+        setAiListenPaused(false);
+      } catch {
+        setAiListenPaused(true);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      isRecordingRef.current = false;
+      translatorGenerationRef.current += 1;
+      try { recognitionRef.current?.abort(); } catch {}
+      recognitionRef.current = null;
+      try { micAudioNodeRef.current?.disconnect(); } catch {}
+      micAudioNodeRef.current = null;
+      micStreamRef.current?.getTracks().forEach((track) => track.stop());
+      micStreamRef.current = null;
+      const ctx = audioContextRef.current;
+      audioContextRef.current = null;
+      if (ctx && ctx.state !== "closed") {
+        try { void ctx.close(); } catch {}
+      }
+    };
+  }, []);
+
+  const showDynamicToast = useCallback((msg: string) => {
     setToastMsg(msg);
     setShowToast(true);
-    setTimeout(() => setShowToast(false), 3000);
-  };
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setShowToast(false), 3000);
+  }, []);
 
-  const copyInviteLink = () => {
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    };
+  }, []);
+
+  const copyInviteLink = useCallback(() => {
     const inviteLink = `${window.location.origin}/room?id=${roomId}`;
     navigator.clipboard.writeText(inviteLink);
     showDynamicToast("Invite link copied to clipboard!");
-  };
+  }, [roomId, showDynamicToast]);
 
   const handleDownloadReport = () => {
     if (!summary) return;
@@ -394,18 +641,87 @@ function RoomContent() {
     showDynamicToast("Data cleared successfully!");
   };
 
-  const handleStartAI = () => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      alert("Your browser does not support AI Speech Detection.");
-      return;
+  const stopTranslatorMic = () => {
+    try { micAudioNodeRef.current?.disconnect(); } catch {}
+    micAudioNodeRef.current = null;
+    micStreamRef.current?.getTracks().forEach((track) => track.stop());
+    micStreamRef.current = null;
+  };
+
+  const toastMicError = (err: any) => {
+    const name = err?.name || "";
+    if (name === "NotAllowedError" || name === "PermissionDeniedError") {
+      showDynamicToast("Microphone permission denied. Enable the mic in your browser settings to use the AI Translator.");
+    } else if (name === "NotFoundError" || name === "DevicesNotFoundError") {
+      showDynamicToast("No microphone was found on this device.");
+    } else if (name === "NotReadableError" || name === "TrackStartError") {
+      showDynamicToast("This microphone is already in use. Close other apps and try again.");
+    } else if (name === "SecurityError") {
+      showDynamicToast("Microphone access is blocked on this page. Use HTTPS and try again.");
+    } else if (name === "NotSupportedError") {
+      showDynamicToast("Microphone access is not available in this browser.");
+    } else {
+      showDynamicToast("Could not access the microphone on this device.");
+    }
+  };
+
+  const beginTranslatorFromUserGesture = () => {
+    const Ctor = (window.AudioContext || (window as any).webkitAudioContext) as typeof AudioContext | undefined;
+    let resumePromise: Promise<void> = Promise.resolve();
+
+    if (Ctor) {
+      if (!audioContextRef.current || audioContextRef.current.state === "closed") {
+        audioContextRef.current = new Ctor();
+      }
+      const ctx = audioContextRef.current;
+      if (ctx.state === "suspended") {
+        resumePromise = ctx.resume().then(() => undefined).catch(() => undefined);
+      }
+      try {
+        const buffer = ctx.createBuffer(1, 1, ctx.sampleRate);
+        const source = ctx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(ctx.destination);
+        source.start(0);
+      } catch {}
     }
 
+    const existing = micStreamRef.current;
+    const live = existing?.getAudioTracks().some((track) => track.readyState === "live");
+    let micPromise: Promise<MediaStream>;
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      micPromise = Promise.reject(Object.assign(new Error("no mediaDevices"), { name: "NotSupportedError" }));
+    } else if (existing && live) {
+      micPromise = Promise.resolve(existing);
+    } else {
+      micPromise = navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true }
+      }).catch((err: any) => {
+        if (err?.name === "OverconstrainedError" || err?.name === "ConstraintNotSatisfiedError") {
+          return navigator.mediaDevices.getUserMedia({ audio: true });
+        }
+        throw err;
+      });
+    }
+
+    return { resumePromise, micPromise };
+  };
+
+  const bootSpeechRecognition = () => {
+    const SpeechRecognition = getSpeechRecognitionCtor();
+    if (!SpeechRecognition || !isRecordingRef.current) return false;
+
+    const generation = ++translatorGenerationRef.current;
+    try { recognitionRef.current?.abort(); } catch {}
+
     const recognition = new SpeechRecognition();
-    recognition.continuous = true;
+    const mobile = isLikelyMobileDevice();
+    recognition.continuous = !mobile;
     recognition.interimResults = true;
-    recognition.lang = languageMap[aiLanguage] || "en-US"; 
-    
+    recognition.maxAlternatives = 1;
+    recognition.lang = languageMap[aiLanguageRef.current] || "en-US";
+
     let currentSessionText = "";
 
     recognition.onresult = (event: any) => {
@@ -417,39 +733,148 @@ function RoomContent() {
       setTranscript((fullTranscriptRef.current + " " + text).trim());
     };
 
+    let startedAt = Date.now();
+
     recognition.onend = () => {
+      if (generation !== translatorGenerationRef.current) return;
       if (currentSessionText) {
         fullTranscriptRef.current += " " + currentSessionText;
         currentSessionText = "";
       }
-      if (isRecordingRef.current) {
-        setTimeout(() => {
-          try { recognition.start(); } catch (e) {}
-        }, 350); 
+      if (!isRecordingRef.current) return;
+
+      if (Date.now() - startedAt < 150) {
+        setAiListenPaused(true);
+        showDynamicToast("Listening paused. Tap Continue to keep transcribing on this device.");
+        return;
+      }
+
+      try {
+        recognition.start();
+        startedAt = Date.now();
+      } catch {
+        const restarted = bootSpeechRecognitionRef.current();
+        if (!restarted) {
+          setAiListenPaused(true);
+          showDynamicToast("Listening paused. Tap Continue to keep transcribing on this device.");
+        }
       }
     };
 
     recognition.onerror = (event: any) => {
-      if (event.error === 'audio-capture' || event.error === 'not-allowed') {
+      if (generation !== translatorGenerationRef.current) return;
+      const error = event?.error;
+      if (error === "no-speech" || error === "aborted") return;
+
+      if (error === "not-allowed" || error === "service-not-allowed") {
         isRecordingRef.current = false;
         setIsRecording(false);
-        alert("Microphone conflict detected. Ensure no other app is using the mic.");
+        setAiListenPaused(false);
+        stopTranslatorMic();
+        showDynamicToast("Microphone permission denied. Enable the mic in your browser settings to use the AI Translator.");
+        return;
+      }
+
+      if (error === "audio-capture") {
+        isRecordingRef.current = false;
+        setIsRecording(false);
+        setAiListenPaused(false);
+        stopTranslatorMic();
+        showDynamicToast("Could not capture audio. Check microphone permission or close other apps using the mic.");
+        return;
+      }
+
+      if (error === "network") {
+        showDynamicToast("Speech recognition lost network access. Check your connection.");
       }
     };
 
+    recognitionRef.current = recognition;
     try {
       recognition.start();
-      setIsRecording(true);
-      isRecordingRef.current = true;
-      recognitionRef.current = recognition;
-    } catch(e) {
-      alert("Failed to start microphone. Please ensure permissions are granted.");
+    } catch {
+      return false;
     }
+    setAiListenPaused(false);
+    return true;
+  };
+  bootSpeechRecognitionRef.current = bootSpeechRecognition;
+
+  const finishTranslatorUnlock = async (resumePromise: Promise<void>, micPromise: Promise<MediaStream>) => {
+    try { await resumePromise; } catch {}
+    try {
+      const stream = await micPromise;
+      stream.getTracks().forEach((track) => track.stop());
+      return true;
+    } catch (err: any) {
+      const name = err?.name || "";
+      if (name === "NotAllowedError" || name === "PermissionDeniedError" || name === "SecurityError") {
+        isRecordingRef.current = false;
+        translatorGenerationRef.current += 1;
+        try { recognitionRef.current?.abort(); } catch {}
+        recognitionRef.current = null;
+        setIsRecording(false);
+        setAiListenPaused(false);
+        stopTranslatorMic();
+        toastMicError(err);
+        return false;
+      }
+      return true;
+    }
+  };
+
+  const handleStartAI = async () => {
+    const SpeechRecognition = getSpeechRecognitionCtor();
+    if (!SpeechRecognition) {
+      showDynamicToast("AI speech detection is not supported in this mobile browser.");
+      return;
+    }
+
+    const { resumePromise, micPromise } = beginTranslatorFromUserGesture();
+
+    isRecordingRef.current = true;
+    setIsRecording(true);
+    setAiListenPaused(false);
+
+    const started = bootSpeechRecognition();
+    if (!started) {
+      isRecordingRef.current = false;
+      setIsRecording(false);
+      showDynamicToast("Failed to start the AI Translator. Please tap the button again.");
+      return;
+    }
+
+    showDynamicToast("AI Translator is listening.");
+    await finishTranslatorUnlock(resumePromise, micPromise);
+  };
+
+  const handleResumeAI = async () => {
+    const { resumePromise, micPromise } = beginTranslatorFromUserGesture();
+
+    isRecordingRef.current = true;
+    setIsRecording(true);
+    setAiListenPaused(false);
+
+    const started = bootSpeechRecognition();
+    if (!started) {
+      setAiListenPaused(true);
+      showDynamicToast("Failed to start the AI Translator. Please tap the button again.");
+      return;
+    }
+
+    await finishTranslatorUnlock(resumePromise, micPromise);
   };
 
   const handleStopAI = async () => {
     isRecordingRef.current = false;
-    if (recognitionRef.current) recognitionRef.current.stop();
+    translatorGenerationRef.current += 1;
+    setAiListenPaused(false);
+    try { recognitionRef.current?.stop(); } catch {}
+    recognitionRef.current = null;
+    stopTranslatorMic();
+    if (audioContextRef.current && audioContextRef.current.state === "running") {
+      try { await audioContextRef.current.suspend(); } catch {}
+    }
     setIsRecording(false);
     setLoadingAI(true);
     setSummary("");
@@ -523,7 +948,17 @@ function RoomContent() {
     }
   };
 
-  const handleRoomDisconnect = () => {
+  const handleRoomDisconnect = useCallback(() => {
+    isRecordingRef.current = false;
+    translatorGenerationRef.current += 1;
+    setAiListenPaused(false);
+    try { recognitionRef.current?.abort(); } catch {}
+    recognitionRef.current = null;
+    try { micAudioNodeRef.current?.disconnect(); } catch {}
+    micAudioNodeRef.current = null;
+    micStreamRef.current?.getTracks().forEach((track) => track.stop());
+    micStreamRef.current = null;
+
     const endTime = Date.now();
     const diffMs = endTime - meetingStartTime;
     const diffMins = Math.floor(diffMs / 60000);
@@ -533,9 +968,9 @@ function RoomContent() {
     if (diffMins > 0) durationStr += `${diffMins} min `;
     durationStr += `${diffSecs} sec`;
 
-    setFinalStats({ duration: durationStr, participants: maxParticipants });
+    setFinalStats({ duration: durationStr, participants: maxParticipantsRef.current });
     setShowPostScreen(true);
-  };
+  }, [meetingStartTime]);
 
   if (!rawUserName) {
     return (
@@ -605,42 +1040,35 @@ function RoomContent() {
   }
 
   return (
-    <div className="relative flex flex-col h-[100dvh] w-full bg-[#04050A] overflow-hidden font-sans">
+    <div className="room-stage relative flex flex-col h-[100dvh] w-full bg-[#04050A] overflow-hidden font-sans">
       
       <NetworkBackground />
 
-      <div className={`absolute top-6 left-1/2 transform -translate-x-1/2 z-[100] bg-[#0f172a] text-white px-6 py-3 rounded-full shadow-[0_0_15px_rgba(0,229,255,0.3)] flex items-center gap-3 border border-[#00e5ff]/30 transition-all duration-300 ${showToast ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-10 pointer-events-none'}`}>
+      <div className={`absolute top-6 left-1/2 transform -translate-x-1/2 z-[100] bg-[#0f172a] text-white px-6 py-3 rounded-full shadow-[0_0_15px_rgba(0,229,255,0.3)] flex items-center gap-3 border border-[#00e5ff]/30 transition-all duration-300 max-w-[min(92vw,36rem)] ${showToast ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-10 pointer-events-none'}`}>
         <svg className="w-5 h-5 text-[#00ff88]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg>
         <span className="font-medium text-sm">{toastMsg || "Success!"}</span>
       </div>
 
       <div className="flex-none px-6 py-4 bg-black/50 backdrop-blur-md border-b border-gray-800/50 flex justify-between items-center z-40">
         <h1 className="text-white text-base lg:text-lg font-bold truncate max-w-[200px] sm:max-w-xs drop-shadow-[0_0_8px_rgba(0,229,255,0.5)]">Room: <span className="text-[#00e5ff]">{roomId}</span></h1>
-        <button onClick={copyInviteLink} className="bg-[#0f172a] hover:bg-[#1e293b] text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all border border-gray-700 hover:border-[#00e5ff]/50 flex items-center gap-2 shadow-[0_0_10px_rgba(0,229,255,0.1)]">
-          <svg className="w-4 h-4 text-[#00e5ff]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
-          <span className="hidden sm:inline">Copy Invite Link</span>
-          <span className="sm:hidden">Copy</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <AboutDspacesButton onClick={() => setAboutOpen(true)} compact />
+          <button onClick={copyInviteLink} className="bg-[#0f172a] hover:bg-[#1e293b] text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all border border-gray-700 hover:border-[#00e5ff]/50 flex items-center gap-2 shadow-[0_0_10px_rgba(0,229,255,0.1)]">
+            <svg className="w-4 h-4 text-[#00e5ff]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
+            <span className="hidden sm:inline">Copy Invite Link</span>
+            <span className="sm:hidden">Copy</span>
+          </button>
+        </div>
       </div>
 
-      <div className="flex-1 w-full min-h-0 relative z-10 bg-transparent">
-        <LiveKitRoom
-          video={true}
-          audio={true}
-          token={token}
-          serverUrl={serverUrl}
-          data-lk-theme="default"
-          style={{ height: '100%', width: '100%', backgroundColor: 'transparent' }}
-          onDisconnected={handleRoomDisconnect}
-        >
-          <MeetingTracker setMaxParticipants={setMaxParticipants} />
-          <VideoConference />
-          <RoomAudioRenderer />
-          
-          <AudioAndHostControls rawUserName={rawUserName} showDynamicToast={showDynamicToast} />
-
-        </LiveKitRoom>
-      </div>
+      <RoomCallStage
+        token={token}
+        serverUrl={serverUrl}
+        rawUserName={rawUserName || "Guest"}
+        onDisconnected={handleRoomDisconnect}
+        showDynamicToast={showDynamicToast}
+        setMaxParticipants={setMaxParticipants}
+      />
 
       {!isAIPanelOpen && (
         <button 
@@ -769,9 +1197,16 @@ function RoomContent() {
                   Start AI Recording
                 </button>
               ) : (
-                <button onClick={handleStopAI} className="w-full bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-400 text-white font-bold py-2.5 rounded-xl transition-all text-xs shadow-lg flex items-center justify-center gap-2">
-                  <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></span> Stop & Generate Summary
-                </button>
+                <>
+                  {aiListenPaused && (
+                    <button onClick={handleResumeAI} type="button" className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold py-2.5 rounded-xl transition-all text-xs shadow-lg">
+                      Tap to continue listening
+                    </button>
+                  )}
+                  <button onClick={handleStopAI} className="w-full bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-400 text-white font-bold py-2.5 rounded-xl transition-all text-xs shadow-lg flex items-center justify-center gap-2">
+                    <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></span> Stop & Generate Summary
+                  </button>
+                </>
               )}
               {loadingAI && <p className="text-center text-[10px] text-[#00e5ff] font-medium animate-pulse">Translating & Processing...</p>}
             </div>
@@ -779,6 +1214,8 @@ function RoomContent() {
         </div>
       </div>
       
+      <AboutDspacesModal open={aboutOpen} onClose={() => setAboutOpen(false)} />
+
       <style dangerouslySetInnerHTML={{__html: `
         .lk-participant-placeholder { background: transparent !important; }
         .lk-participant-placeholder svg { display: none !important; }

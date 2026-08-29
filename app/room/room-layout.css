@@ -1,0 +1,236 @@
+/* Screen-share / participant grid: keep the stage inside the viewport.
+   dTelecom's focus layout uses `grid-template-columns: 1fr 5fr` with the
+   screen-share tile as the FIRST child, so the share is squeezed and the
+   carousel tiles (flex-shrink: 0 + 16/10 aspect-ratio) blow out vertically. */
+
+.room-stage .lk-room-container,
+.room-stage .lk-video-conference {
+  height: 100%;
+  width: 100%;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.room-stage .lk-video-conference {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+}
+
+.room-stage .lk-video-conference-inner {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0%;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: visible;
+}
+
+.room-stage .lk-focus-layout-wrapper,
+.room-stage .lk-grid-layout-wrapper {
+  position: relative;
+  display: flex;
+  flex: 1 1 0%;
+  align-items: stretch;
+  justify-content: center;
+  width: 100%;
+  min-height: 0;
+  min-width: 0;
+  height: auto !important;
+  overflow: hidden;
+}
+
+.room-stage .lk-control-bar,
+.room-stage .lk-control-bar-mobile {
+  flex-shrink: 0;
+  overflow: visible;
+  position: relative;
+  z-index: 30;
+}
+
+.room-stage .lk-chat {
+  flex-shrink: 0;
+  max-height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ---- Focus layout: screen share takes the remaining space, tiles in a rail ---- */
+
+.room-stage .lk-focus-layout {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) clamp(140px, 18vw, 240px) !important;
+  grid-template-rows: minmax(0, 1fr) !important;
+  gap: 0.5rem;
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0.5rem;
+  box-sizing: border-box;
+}
+
+.room-stage .lk-focus-layout > .lk-participant-tile {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  overflow: hidden;
+}
+
+.room-stage .lk-focus-layout > .lk-participant-tile video,
+.room-stage .lk-focus-layout > .lk-participant-tile .lk-participant-media-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background-color: #000;
+}
+
+/* ---- Participant rail (desktop = vertical, mobile = horizontal) ---- */
+
+.room-stage .lk-carousel {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  gap: 0.5rem;
+  overflow: hidden;
+}
+
+.room-stage .lk-carousel > * {
+  flex-shrink: 1 !important;
+  aspect-ratio: unset !important;
+}
+
+.room-stage .lk-carousel[data-lk-orientation="vertical"] {
+  flex-direction: column;
+  overflow-x: hidden;
+  overflow-y: auto;
+  align-items: stretch;
+  justify-content: flex-start;
+  scroll-snap-type: y proximity;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+.room-stage .lk-carousel[data-lk-orientation="vertical"] > .lk-participant-tile {
+  position: relative;
+  flex: 0 0 auto !important;
+  width: 100% !important;
+  height: auto !important;
+  min-height: 96px;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  scroll-snap-align: start;
+  background-color: #0f172a;
+}
+
+.room-stage .lk-carousel[data-lk-orientation="horizontal"] {
+  flex-direction: row;
+  height: 112px;
+  max-height: 112px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  align-items: stretch;
+  scroll-snap-type: x proximity;
+}
+
+.room-stage .lk-carousel[data-lk-orientation="horizontal"] > * {
+  height: 100% !important;
+  width: 100% !important;
+  min-width: 0;
+  min-height: 0;
+}
+
+.room-stage .lk-carousel[data-lk-orientation="horizontal"] .lk-grid-layout {
+  height: 100%;
+  width: 100%;
+  max-height: 100%;
+  padding: 0;
+  grid-auto-rows: minmax(0, 1fr);
+}
+
+/* ---- Shared tile / video rules so intrinsic video size cannot expand the stage ---- */
+
+.room-stage .lk-participant-tile {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.room-stage .lk-carousel .lk-participant-tile video,
+.room-stage .lk-carousel .lk-participant-tile .lk-participant-media-video,
+.room-stage .lk-grid-layout .lk-participant-tile video,
+.room-stage .lk-grid-layout .lk-participant-tile .lk-participant-media-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.room-stage .lk-participant-tile[data-lk-source="screen_share"] video,
+.room-stage .lk-participant-tile[data-lk-source="screen_share"] .lk-participant-media-video {
+  object-fit: contain;
+  background-color: #000;
+}
+
+.room-stage .lk-carousel .lk-participant-placeholder .custom-avatar {
+  width: 48px !important;
+  height: 48px !important;
+  font-size: 32px !important;
+}
+
+/* ---- Equal-size grid when nobody is screen sharing / pinned ---- */
+
+.room-stage .lk-grid-layout {
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  grid-auto-rows: minmax(0, 1fr);
+}
+
+.room-stage .lk-grid-layout .lk-participant-tile {
+  height: 100%;
+  width: 100%;
+  max-height: 100%;
+}
+
+/* ---- Mobile / small screens: share on top, tile strip below ---- */
+
+@media (max-width: 600px) {
+  .room-stage .lk-focus-layout {
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-rows: minmax(0, 1fr) 112px !important;
+  }
+
+  .room-stage .lk-carousel {
+    order: 0;
+  }
+}
+
+@media (max-width: 760px) {
+  .dspaces-screenshare-label {
+    display: none;
+  }
+}

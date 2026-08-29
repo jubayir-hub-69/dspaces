@@ -1,5 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  reactStrictMode: false,
   typescript: {
     // !! WARN !!
     // Dangerously allow production builds to successfully complete even if
@@ -8,7 +9,7 @@ const nextConfig = {
   },
   eslint: {
     // Ignore eslint errors during build
-    ignoreDuringBuilds: true,
+    ignoreDuringBuilds: false,
   }
 };
 

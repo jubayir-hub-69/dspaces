@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useWallet } from "@solana/wallet-adapter-react";
 import dynamic from "next/dynamic";
+import { AboutDspacesButton, AboutDspacesModal } from "../../components/AboutDspacesModal";
 
 const WalletMultiButton = dynamic(
   () => import("@solana/wallet-adapter-react-ui").then((mod) => mod.WalletMultiButton),
@@ -31,6 +32,7 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(false);
   
   const [viewSummary, setViewSummary] = useState<string | null>(null);
+  const [aboutOpen, setAboutOpen] = useState(false);
 
   const avatars = ["👨‍🚀", "🥷", "🧙‍♂️", "👩‍🎤", "🤖", "👻", "🦊", "🐼"];
 
@@ -196,9 +198,12 @@ export default function ProfilePage() {
         <h1 onClick={() => router.push('/')} className="text-2xl font-extrabold cursor-pointer bg-gradient-to-r from-[#00e5ff] to-[#00ff88] bg-clip-text text-transparent drop-shadow-md transition-transform hover:scale-105">
           dSpaces
         </h1>
-        <button onClick={() => router.push('/')} className="text-sm font-bold bg-[#0f172a] border border-gray-700 hover:border-[#00e5ff]/50 text-white px-5 py-2.5 rounded-xl transition-all shadow-lg">
-          Back to Home
-        </button>
+        <div className="flex items-center gap-3">
+          <AboutDspacesButton onClick={() => setAboutOpen(true)} />
+          <button onClick={() => router.push('/')} className="text-sm font-bold bg-[#0f172a] border border-gray-700 hover:border-[#00e5ff]/50 text-white px-5 py-2.5 rounded-xl transition-all shadow-lg">
+            Back to Home
+          </button>
+        </div>
       </nav>
 
       <section className="relative z-10 max-w-5xl mx-auto px-4 py-12 flex flex-col md:flex-row gap-8 flex-grow w-full">
@@ -391,6 +396,8 @@ export default function ProfilePage() {
         </div>
       )}
       
+      <AboutDspacesModal open={aboutOpen} onClose={() => setAboutOpen(false)} />
+
       <style dangerouslySetInnerHTML={{__html: `
         @keyframes fadeInUp { from { opacity: 0; transform: translateY(-20px) translateX(-50%); } to { opacity: 1; transform: translateY(0) translateX(-50%); } }
         .animate-fade-in-up { animation: fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }

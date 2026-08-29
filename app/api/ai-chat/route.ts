@@ -19,7 +19,10 @@ export async function POST(req: Request) {
     
     const models = listData.models || [];
     const validModels = models.filter((m: any) => m.supportedGenerationMethods?.includes("generateContent") && m.name.includes("gemini"));
-    const selectedModel = (validModels.find((m: any) => m.name.includes("1.5-flash")) || validModels.find((m: any) => m.name.includes("1.5-pro")) || validModels[0])?.name;
+    const selectedModel =
+      validModels.find((m: any) => /gemini-3\.6-flash/i.test(m.name))?.name ||
+      validModels.find((m: any) => /3\.6-flash/i.test(m.name))?.name ||
+      "models/gemini-3.6-flash";
 
     if (!selectedModel) return NextResponse.json({ success: false, error: "No compatible models found." });
 
