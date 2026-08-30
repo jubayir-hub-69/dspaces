@@ -1,5 +1,15 @@
 import { AccessToken } from '@dtelecom/server-sdk-js';
 import { NextResponse } from 'next/server';
+import {
+    getRoomHost,
+    isImportantRoom,
+    markImportantRoom,
+    removeCoHost,
+    revokeSpeaker,
+    serializeImportantMeta,
+    setRoomHost,
+    type ImportantRole,
+} from '../../../lib/important-meetings';
 
 export async function POST(req: Request) {
     try {
@@ -20,12 +30,52 @@ export async function POST(req: Request) {
             identity: participantName,
         });
 
-        at.addGrant({ 
-            roomJoin: true, 
-            room: roomName,
-            canPublish: true,
-            canSubscribe: true 
-        });
+        const isImportantMode = body.mode === "important" || isImportantRoom(roomName);
+        const isHost = body.isHost === true || body.isHost === "true";
+        let importantRole: ImportantRole = "listener";
+
+        if (isImportantMode && isHost) {
+            markImportantRoom(roomName);
+            setRoomHost(roomName, participantName);
+        }
+
+        if (isImportantMode) {
+            const hostId = getRoomHost(roomName);
+            let canPublish = false;
+            const isSupremeHost = isHost || (!!hostId && hostId === participantName);
+
+            if (isSupremeHost) {
+                importantRole = "supreme_host";
+                canPublish = true;
+                markImportantRoom(roomName);
+                setRoomHost(roomName, participantName);
+            } else {
+                importantRole = "listener";
+                canPublish = false;
+                revokeSpeaker(roomName, participantName);
+                removeCoHost(roomName, participantName);
+            }
+
+            at.metadata = serializeImportantMeta({
+                role: importantRole,
+                isCoHost: false,
+            });
+
+            at.addGrant({
+                roomJoin: true,
+                room: roomName,
+                canPublish,
+                canSubscribe: true,
+                canPublishData: true,
+            });
+        } else {
+            at.addGrant({ 
+                roomJoin: true, 
+                room: roomName,
+                canPublish: true,
+                canSubscribe: true 
+            });
+        }
         
         const token = at.toJwt();
 
@@ -41,6 +91,10 @@ export async function POST(req: Request) {
              return NextResponse.json({ 
                  error: "dTelecom server could not assign a video node right now. Please try again later." 
              }, { status: 500 });
+        }
+
+        if (isImportantMode) {
+            return NextResponse.json({ token, url: wsUrl, important: true, role: importantRole });
         }
 
         return NextResponse.json({ token, url: wsUrl });

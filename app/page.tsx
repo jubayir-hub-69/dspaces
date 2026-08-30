@@ -120,6 +120,7 @@ export default function Home() {
   const [isDark, setIsDark] = useState(true);
   const [toastMsg, setToastMsg] = useState("");
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [joinMode, setJoinMode] = useState("");
 
   const showToast = (msg: string) => {
     setToastMsg(msg);
@@ -141,9 +142,13 @@ export default function Home() {
 
     const urlParams = new URLSearchParams(window.location.search);
     const joinId = urlParams.get("room") || urlParams.get("id");
+    const incomingMode = urlParams.get("mode");
     if (joinId) {
       setRoomId(joinId);
       window.history.replaceState({}, document.title, window.location.pathname);
+    }
+    if (incomingMode === "important") {
+      setJoinMode("important");
     }
   }, []);
 
@@ -238,6 +243,15 @@ export default function Home() {
     router.push(`/room?id=dSpaces-${randomCode}&name=${userName.trim()}&ishost=true`);
   };
 
+  const handleCreateImportantMeeting = () => {
+    if (!userName.trim()) return showToast("Please enter your Display Name first.");
+    let db = getDb();
+    const updatedDb = db.map((a: any) => (a.email === myAcc.email && a.wallet === myAcc.wallet) ? { ...a, name: userName.trim() } : a);
+    saveDb(updatedDb);
+    const randomCode = Math.floor(1000 + Math.random() * 9000);
+    router.push(`/room?id=dSpaces-${randomCode}&name=${userName.trim()}&ishost=true&mode=important`);
+  };
+
   const handleJoinRoom = () => {
     if (!userName.trim()) return showToast("Please enter your Display Name first.");
     let db = getDb();
@@ -245,19 +259,23 @@ export default function Home() {
     saveDb(updatedDb);
     let finalId = roomId.trim();
     if (!finalId) return showToast("Please enter a Room ID or Link to join.");
+    let extractedMode = joinMode;
     if (finalId.includes("http") || finalId.includes("?")) {
       try {
         const urlObj = new URL(finalId.startsWith("http") ? finalId : `https://dummy.com/${finalId}`);
         const extractedId = urlObj.searchParams.get("room") || urlObj.searchParams.get("id");
         if (extractedId) finalId = extractedId;
+        if (urlObj.searchParams.get("mode") === "important") extractedMode = "important";
       } catch (e) {
         if (finalId.includes("room=")) finalId = finalId.split("room=")[1].split("&")[0];
         else if (finalId.includes("id=")) finalId = finalId.split("id=")[1].split("&")[0];
+        if (roomId.includes("mode=important")) extractedMode = "important";
       }
     }
     const isValidFormat = /^dSpaces-\d{4}$/.test(finalId);
     if (!isValidFormat) return showToast("Invalid Room ID! Please enter a valid code (e.g., dSpaces-1234).");
-    router.push(`/room?id=${finalId}&name=${userName.trim()}`);
+    const modeQuery = extractedMode === "important" ? "&mode=important" : "";
+    router.push(`/room?id=${finalId}&name=${userName.trim()}${modeQuery}`);
   };
 
   const displayAccountInfo = myAcc?.email 
@@ -281,8 +299,8 @@ export default function Home() {
 
       <style dangerouslySetInnerHTML={{__html: `@keyframes fadeInUp { from { opacity: 0; transform: translateY(-20px); } to { opacity: 1; transform: translateY(0); } } .animate-fade-in-up { animation: fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }`}} />
 
-      <nav className={`relative z-50 flex justify-between items-center px-4 sm:px-8 py-5 border-b backdrop-blur-md ${isDark ? 'border-white/5 bg-black/20' : 'border-gray-200 bg-white/40'}`}>
-        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 bg-clip-text text-transparent drop-shadow-sm cursor-pointer hover:scale-105 transition-transform">dSpaces</h1>
+      <nav className={`relative z-50 flex justify-between items-center px-4 sm:px-8 py-5 border-b backdrop-blur-xl ${isDark ? 'border-white/10 bg-black/30' : 'border-gray-200 bg-white/50'}`}>
+        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight bg-gradient-to-r from-cyan-400 via-indigo-400 to-fuchsia-400 bg-clip-text text-transparent drop-shadow-sm cursor-pointer hover:scale-105 transition-transform">dSpaces</h1>
         <div className="flex items-center gap-3 sm:gap-4">
           <AboutDspacesButton onClick={() => setAboutOpen(true)} isDark={isDark} />
           <button onClick={() => setIsDark(!isDark)} className={`p-2 rounded-full transition-colors ${isDark ? 'bg-gray-800 text-yellow-400 hover:bg-gray-700' : 'bg-gray-200 text-gray-800 hover:bg-gray-300'}`}>
@@ -290,7 +308,7 @@ export default function Home() {
           </button>
           
           {myAcc && (
-            <button onClick={() => router.push('/profile')} className="p-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm px-4 shadow-lg shadow-blue-500/20 transition-all hidden sm:block">
+            <button onClick={() => router.push('/profile')} className="p-2 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white font-bold text-sm px-4 shadow-lg shadow-indigo-500/25 transition-all hidden sm:block">
               My Profile
             </button>
           )}
@@ -302,7 +320,7 @@ export default function Home() {
           )}
 
           {myAcc && (
-            <div className={`flex items-center gap-3 border rounded-xl p-1.5 pl-4 shadow-lg ${isDark ? 'bg-gray-900/80 border-gray-700/50' : 'bg-white border-gray-200'} hidden sm:flex`}>
+            <div className={`flex items-center gap-3 border rounded-2xl p-1.5 pl-4 shadow-lg backdrop-blur-md ${isDark ? 'bg-white/5 border-white/10' : 'bg-white border-gray-200'} hidden sm:flex`}>
               <div className="flex items-center gap-2 max-w-[120px] sm:max-w-xs">
                 <span className="relative flex h-2.5 w-2.5">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
@@ -327,37 +345,37 @@ export default function Home() {
       <section className="relative z-10 flex flex-col items-center justify-center min-h-[80vh] px-4 py-12 text-center">
         {!myAcc && (
           <div className="mb-8">
-            <h1 className="text-4xl sm:text-6xl font-black mb-4 tracking-tight">The Future of <span className="bg-gradient-to-r from-blue-500 to-purple-500 bg-clip-text text-transparent">Web3 Meetings</span></h1>
+            <h1 className="text-4xl sm:text-6xl font-black mb-4 tracking-tight">The Future of <span className="bg-gradient-to-r from-cyan-400 via-indigo-400 to-fuchsia-400 bg-clip-text text-transparent">Web3 Meetings</span></h1>
             <p className={`text-sm sm:text-base max-w-lg mx-auto ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Connect your Solana wallet or verify your email to access secure video conferencing.</p>
-            <button type="button" onClick={() => setAboutOpen(true)} className="mt-4 text-sm font-bold text-blue-400 hover:text-blue-300 underline underline-offset-4">
+            <button type="button" onClick={() => setAboutOpen(true)} className="mt-5 inline-flex items-center gap-2 text-sm font-bold text-cyan-300 hover:text-white underline underline-offset-4 transition-all">
               New here? See how dSpaces works
             </button>
           </div>
         )}
 
-        <div className={`w-full max-w-3xl p-6 sm:p-8 rounded-3xl transition-all duration-500 shadow-2xl backdrop-blur-xl border ${isDark ? 'bg-gray-900/60 border-white/5 shadow-black/50' : 'bg-white/80 border-gray-200 shadow-gray-200/50'}`}>
+        <div className={`w-full max-w-3xl p-6 sm:p-8 rounded-3xl transition-all duration-500 shadow-2xl backdrop-blur-2xl border ${isDark ? 'bg-gray-900/50 border-white/10 shadow-indigo-500/10' : 'bg-white/80 border-gray-200 shadow-gray-200/50'}`}>
           {!myAcc ? (
             <div className="flex flex-col sm:flex-row gap-6">
-              <div className={`flex-1 text-left p-6 rounded-2xl border transition-colors ${isDark ? 'bg-gray-900/40 border-gray-800' : 'bg-gray-50 border-gray-200'}`}>
+              <div className={`flex-1 text-left p-6 rounded-2xl border backdrop-blur-md transition-all ${isDark ? 'bg-white/5 border-white/10 hover:border-indigo-400/30' : 'bg-gray-50 border-gray-200'}`}>
                 <label className={`flex items-center gap-2 text-xs font-bold uppercase tracking-widest mb-4 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}><span className="w-2 h-2 rounded-full bg-indigo-500"></span>Option 1: Web3 Wallet</label>
                 <div className="flex justify-center w-full relative z-40 opacity-80 cursor-not-allowed">
                   <WalletMultiButton style={{ width: "100%", justifyContent: "center", backgroundColor: "#4f46e5", borderRadius: "12px", height: "48px", fontWeight: "bold" }} />
                 </div>
               </div>
 
-              <div className={`flex-1 text-left p-6 rounded-2xl border transition-colors ${isDark ? 'bg-gray-900/40 border-gray-800 hover:border-blue-500/50' : 'bg-gray-50 border-gray-200 hover:border-blue-400'}`}>
+              <div className={`flex-1 text-left p-6 rounded-2xl border backdrop-blur-md transition-all ${isDark ? 'bg-white/5 border-white/10 hover:border-cyan-400/40' : 'bg-gray-50 border-gray-200 hover:border-blue-400'}`}>
                  <label className={`flex items-center gap-2 text-xs font-bold uppercase tracking-widest mb-4 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}><span className="w-2 h-2 rounded-full bg-blue-500"></span>Option 2: Email Login</label>
                 <div className="flex flex-col gap-4">
                   {!otpSent ? (
                     <div className="flex flex-col gap-3">
-                      <input type="email" placeholder="name@example.com" value={email} onChange={(e) => setEmail(e.target.value)} className={`w-full px-4 py-3.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all ${isDark ? 'bg-gray-950/50 border border-gray-700 text-white placeholder:text-gray-600' : 'bg-white border border-gray-300 text-gray-900 placeholder:text-gray-400'}`}/>
-                      <button onClick={handleSendOTP} disabled={loading} className="w-full py-3.5 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 text-white font-bold rounded-xl text-sm transition-all shadow-lg hover:shadow-blue-500/25 active:scale-[0.98]">{loading ? "Sending Secure Code..." : "Get OTP Code"}</button>
+                      <input type="email" placeholder="name@example.com" value={email} onChange={(e) => setEmail(e.target.value)} className={`w-full px-4 py-3.5 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all ${isDark ? 'bg-black/40 border border-white/10 text-white placeholder:text-gray-600' : 'bg-white border border-gray-300 text-gray-900 placeholder:text-gray-400'}`}/>
+                      <button onClick={handleSendOTP} disabled={loading} className="w-full py-3.5 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 disabled:from-gray-700 disabled:to-gray-700 text-white font-bold rounded-2xl text-sm transition-all shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/40 active:scale-[0.98]">{loading ? "Sending Secure Code..." : "Get OTP Code"}</button>
                     </div>
                   ) : (
                     <div className="flex flex-col gap-3">
                       <div className="flex justify-between items-center mb-1"><span className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Code sent to <span className={isDark ? 'text-white' : 'text-black'}>{email}</span></span><button onClick={() => { setOtpSent(false); setOtp(""); }} className="text-xs text-blue-500 hover:text-blue-400 underline">Change</button></div>
-                      <input type="text" placeholder="• • • • • •" value={otp} maxLength={6} onChange={(e) => setOtp(e.target.value)} className={`w-full px-4 py-3.5 rounded-xl text-center text-2xl tracking-[0.5em] font-bold focus:outline-none focus:ring-2 focus:ring-green-500 transition-all ${isDark ? 'bg-gray-950/50 border border-gray-700 text-white' : 'bg-white border border-gray-300 text-gray-900'}`}/>
-                      <button onClick={handleVerifyOTP} disabled={loading} className="w-full py-3.5 bg-green-600 hover:bg-green-500 disabled:bg-gray-700 text-white font-bold rounded-xl text-sm transition-all shadow-lg hover:shadow-green-500/25 active:scale-[0.98]">{loading ? "Verifying..." : "Secure Login"}</button>
+                      <input type="text" placeholder="• • • • • •" value={otp} maxLength={6} onChange={(e) => setOtp(e.target.value)} className={`w-full px-4 py-3.5 rounded-2xl text-center text-2xl tracking-[0.5em] font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all ${isDark ? 'bg-black/40 border border-white/10 text-white' : 'bg-white border border-gray-300 text-gray-900'}`}/>
+                      <button onClick={handleVerifyOTP} disabled={loading} className="w-full py-3.5 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 disabled:from-gray-700 disabled:to-gray-700 text-black font-bold rounded-2xl text-sm transition-all shadow-lg shadow-emerald-500/20 active:scale-[0.98]">{loading ? "Verifying..." : "Secure Login"}</button>
                     </div>
                   )}
                 </div>
@@ -370,37 +388,61 @@ export default function Home() {
                 <p className={`text-sm mt-2 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Update your Display Name or jump right into a meeting.</p>
               </div>
 
-              <div className="text-left bg-blue-500/5 p-6 rounded-2xl border border-blue-500/20">
-                <label className={`text-xs font-bold uppercase tracking-widest ml-1 ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>Your Display Name</label>
-                <input type="text" placeholder="e.g. John Doe" value={userName} onChange={(e) => setUserName(e.target.value)} className={`w-full px-5 py-4 text-lg rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 mt-2 transition-all ${isDark ? 'bg-gray-900 border border-gray-700 text-white placeholder:text-gray-600' : 'bg-white border border-gray-300 text-gray-900 placeholder:text-gray-400'}`}/>
+              <div className={`text-left p-6 rounded-2xl border backdrop-blur-md ${isDark ? 'bg-indigo-500/10 border-white/10' : 'bg-blue-50 border-blue-200'}`}>
+                <label className={`text-xs font-bold uppercase tracking-widest ml-1 ${isDark ? 'text-cyan-300' : 'text-blue-600'}`}>Your Display Name</label>
+                <input type="text" placeholder="e.g. John Doe" value={userName} onChange={(e) => setUserName(e.target.value)} className={`w-full px-5 py-4 text-lg rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-500 mt-2 transition-all ${isDark ? 'bg-black/40 border border-white/10 text-white placeholder:text-gray-600' : 'bg-white border border-gray-300 text-gray-900 placeholder:text-gray-400'}`}/>
               </div>
 
               <div className="flex flex-col sm:flex-row gap-6 mt-2">
-                <div className={`flex-1 text-left p-6 rounded-2xl border flex flex-col justify-between ${isDark ? 'bg-gray-900/40 border-gray-800' : 'bg-gray-50 border-gray-200'}`}>
+                <div className={`flex-1 text-left p-6 rounded-2xl border backdrop-blur-md flex flex-col justify-between transition-all ${isDark ? 'bg-white/5 border-white/10 hover:border-indigo-400/30' : 'bg-gray-50 border-gray-200'}`}>
                   <div>
                     <h3 className="text-xl font-bold mb-2">Start a Meeting</h3>
                     <p className={`text-xs mb-6 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Create a secure, decentralized video room instantly.</p>
                   </div>
-                  <button onClick={handleCreateRoom} className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold rounded-xl transition-all shadow-lg hover:shadow-blue-500/30 active:scale-[0.98] flex items-center justify-center gap-2">
+                  <button onClick={handleCreateRoom} className="w-full py-4 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white font-bold rounded-2xl transition-all shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/40 active:scale-[0.98] flex items-center justify-center gap-2">
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"></path></svg>Create New Room
                   </button>
                 </div>
 
-                <div className={`flex-1 text-left p-6 rounded-2xl border flex flex-col justify-between ${isDark ? 'bg-gray-900/40 border-gray-800' : 'bg-gray-50 border-gray-200'}`}>
+                <div className={`flex-1 text-left p-6 rounded-2xl border backdrop-blur-md flex flex-col justify-between transition-all ${isDark ? 'bg-white/5 border-white/10 hover:border-emerald-400/30' : 'bg-gray-50 border-gray-200'}`}>
                    <div>
                     <h3 className="text-xl font-bold mb-2">Join a Meeting</h3>
                     <p className={`text-xs mb-4 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Enter the specific Room ID shared with you.</p>
-                    <input type="text" placeholder="e.g. dSpaces-1234" value={roomId} onChange={(e) => setRoomId(e.target.value)} className={`w-full px-4 py-3 mb-4 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 transition-all ${isDark ? 'bg-gray-950/50 border border-gray-700 text-white placeholder:text-gray-600' : 'bg-white border border-gray-300 text-gray-900 placeholder:text-gray-400'}`}/>
+                    <input type="text" placeholder="e.g. dSpaces-1234" value={roomId} onChange={(e) => { setRoomId(e.target.value); setJoinMode(""); }} className={`w-full px-4 py-3 mb-4 rounded-2xl focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all ${isDark ? 'bg-black/40 border border-white/10 text-white placeholder:text-gray-600' : 'bg-white border border-gray-300 text-gray-900 placeholder:text-gray-400'}`}/>
+                    {joinMode === "important" && (
+                      <p className={`text-xs mb-3 ${isDark ? 'text-amber-400' : 'text-amber-600'}`}>Joining an Important Meeting as a listener.</p>
+                    )}
                   </div>
-                  <button onClick={handleJoinRoom} className={`w-full py-4 font-bold rounded-xl transition-all border active:scale-[0.98] flex items-center justify-center gap-2 ${isDark ? 'bg-gray-800 hover:bg-gray-700 text-white border-gray-700 hover:border-gray-500' : 'bg-white hover:bg-gray-50 text-gray-800 border-gray-300 hover:border-gray-400'}`}>
+                  <button onClick={handleJoinRoom} className={`w-full py-4 font-bold rounded-2xl transition-all border active:scale-[0.98] flex items-center justify-center gap-2 shadow-lg ${isDark ? 'bg-white/5 hover:bg-white/10 text-white border-white/10 hover:border-white/30 hover:shadow-white/10' : 'bg-white hover:bg-gray-50 text-gray-800 border-gray-300 hover:border-gray-400'}`}>
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"></path></svg>Join Existing Room
                   </button>
                 </div>
+              </div>
+
+              <div className={`text-left p-6 rounded-2xl border backdrop-blur-md flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 transition-all ${isDark ? 'bg-gradient-to-r from-amber-500/10 to-fuchsia-500/10 border-white/10 hover:border-amber-400/30' : 'bg-amber-50 border-amber-200'}`}>
+                <div>
+                  <h3 className="text-xl font-bold mb-2">Important Meeting</h3>
+                  <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                    Strict mode: only you can speak. Listeners raise a hand before they can use their mic.
+                  </p>
+                </div>
+                <button
+                  onClick={handleCreateImportantMeeting}
+                  className="w-full sm:w-auto sm:min-w-[240px] py-4 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-black font-bold rounded-2xl transition-all shadow-lg shadow-amber-500/20 hover:shadow-amber-500/40 active:scale-[0.98]"
+                >
+                  Create Important Meeting
+                </button>
               </div>
             </div>
           )}
         </div>
       </section>
+
+      <footer className="relative z-10 py-8 text-center">
+        <p className={`text-[11px] font-semibold uppercase tracking-[0.2em] ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
+          Built for premium Web3 conversations
+        </p>
+      </footer>
 
       <AboutDspacesModal open={aboutOpen} onClose={() => setAboutOpen(false)} isDark={isDark} />
     </main>

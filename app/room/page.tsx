@@ -6,11 +6,14 @@ import {
   LiveKitRoom, 
   VideoConference, 
   RoomAudioRenderer,
-  useRoomContext
+  useRoomContext,
+  useLocalParticipantPermissions,
 } from "@dtelecom/components-react";
 import "@dtelecom/components-styles";
 import "./room-layout.css";
 import { AboutDspacesButton, AboutDspacesModal } from "../../components/AboutDspacesModal";
+import { ImportantMeetingControls } from "../../components/ImportantMeetingControls";
+import { ImportantMeetingStage } from "../../components/ImportantMeetingStage";
 
 interface ChatMessage {
   sender: "user" | "ai";
@@ -172,6 +175,8 @@ const isScreenShareSupported = () => {
 const ScreenShareGuard = memo(function ScreenShareGuard({ showDynamicToast }: { showDynamicToast: (msg: string) => void }) {
   const toastRef = useRef(showDynamicToast);
   toastRef.current = showDynamicToast;
+  const permissions = useLocalParticipantPermissions();
+  const canPublish = permissions?.canPublish !== false;
 
   useEffect(() => {
     let lastToastAt = 0;
@@ -248,7 +253,7 @@ const ScreenShareGuard = memo(function ScreenShareGuard({ showDynamicToast }: { 
     let observer: MutationObserver | null = null;
     let debounceId: ReturnType<typeof setTimeout> | null = null;
 
-    if (!isScreenShareSupported()) {
+    if (!isScreenShareSupported() && canPublish) {
       syncFallbackButton();
       observer = new MutationObserver(() => {
         if (debounceId != null) return;
@@ -258,6 +263,8 @@ const ScreenShareGuard = memo(function ScreenShareGuard({ showDynamicToast }: { 
         }, 300);
       });
       observer.observe(document.body, { childList: true, subtree: true });
+    } else if (!canPublish) {
+      document.querySelector("[data-dspaces-screenshare-fallback]")?.remove();
     }
 
     return () => {
@@ -270,12 +277,12 @@ const ScreenShareGuard = memo(function ScreenShareGuard({ showDynamicToast }: { 
         delete (mediaDevices as MediaDevices & { __dspacesShareWrapped?: boolean }).__dspacesShareWrapped;
       }
     };
-  }, []);
+  }, [canPublish]);
 
   return null;
 });
 
-const AudioAndHostControls = memo(function AudioAndHostControls({ rawUserName, showDynamicToast }: { rawUserName: string, showDynamicToast: (msg: string) => void }) {
+const AudioAndHostControls = memo(function AudioAndHostControls({ rawUserName, showDynamicToast, isImportant, isSupremeHost }: { rawUserName: string, showDynamicToast: (msg: string) => void, isImportant?: boolean, isSupremeHost?: boolean }) {
   const room = useRoomContext();
   const [aiNoise, setAiNoise] = useState(true);
   const lastSignalTime = useRef(0);
@@ -313,6 +320,10 @@ const AudioAndHostControls = memo(function AudioAndHostControls({ rawUserName, s
           data.signals.forEach((sig: any) => {
             if (sig.target === myName && sig.timestamp > lastSignalTime.current) {
               lastSignalTime.current = sig.timestamp;
+
+              if (isImportant && isSupremeHost && (sig.action === "MUTE_USER" || sig.action === "KICK_USER")) {
+                return;
+              }
               
               if (sig.action === "MUTE_USER") {
                 if (room.localParticipant) {
@@ -332,7 +343,7 @@ const AudioAndHostControls = memo(function AudioAndHostControls({ rawUserName, s
 
     const interval = setInterval(checkSignals, 2000);
     return () => clearInterval(interval);
-  }, [room, rawUserName]);
+  }, [room, rawUserName, isImportant, isSupremeHost]);
 
   const toggleNoiseSuppression = useCallback(() => {
     const next = !aiNoiseRef.current;
@@ -360,6 +371,10 @@ type RoomCallStageProps = {
   onDisconnected: () => void;
   showDynamicToast: (msg: string) => void;
   setMaxParticipants: (n: any) => void;
+  isImportant?: boolean;
+  isHost?: boolean;
+  roomId?: string;
+  joinRole?: string;
 };
 
 const RoomCallStage = memo(function RoomCallStage({
@@ -369,24 +384,47 @@ const RoomCallStage = memo(function RoomCallStage({
   onDisconnected,
   showDynamicToast,
   setMaxParticipants,
+  isImportant = false,
+  isHost = false,
+  roomId = "",
+  joinRole = "",
 }: RoomCallStageProps) {
+  const publishOnJoin = !isImportant || isHost;
   return (
     <div className="flex-1 w-full min-h-0 relative z-10 bg-transparent overflow-hidden flex flex-col">
       <LiveKitRoom
-        video={true}
-        audio={true}
+        video={publishOnJoin}
+        audio={publishOnJoin}
         token={token}
         serverUrl={serverUrl}
+        connectOptions={isImportant ? { autoSubscribe: true } : undefined}
         data-lk-theme="default"
         className="h-full min-h-0 overflow-hidden"
         style={LIVEKIT_ROOM_STYLE}
         onDisconnected={onDisconnected}
       >
         <MeetingTracker setMaxParticipants={setMaxParticipants} />
-        <VideoConference />
+        {isImportant ? (
+          <ImportantMeetingStage
+            isHost={isHost}
+            roomId={roomId}
+            serverUrl={serverUrl}
+            showDynamicToast={showDynamicToast}
+          />
+        ) : (
+          <VideoConference />
+        )}
         <RoomAudioRenderer />
         <ScreenShareGuard showDynamicToast={showDynamicToast} />
-        <AudioAndHostControls rawUserName={rawUserName} showDynamicToast={showDynamicToast} />
+        <AudioAndHostControls rawUserName={rawUserName} showDynamicToast={showDynamicToast} isImportant={isImportant} isSupremeHost={isHost} />
+        {isImportant && (
+          <ImportantMeetingControls
+            isHost={isHost}
+            roomId={roomId}
+            serverUrl={serverUrl}
+            showDynamicToast={showDynamicToast}
+          />
+        )}
       </LiveKitRoom>
     </div>
   );
@@ -399,12 +437,14 @@ function RoomContent() {
   const roomId = searchParams.get("id") || "dSpaces-Room";
   const rawUserName = searchParams.get("name");
   const isHost = searchParams.get("ishost") === "true";
+  const urlImportant = searchParams.get("mode") === "important";
 
   useEffect(() => {
     if (!rawUserName) {
-      router.replace(`/?id=${roomId}`);
+      const modeQuery = urlImportant ? "&mode=important" : "";
+      router.replace(`/?id=${roomId}${modeQuery}`);
     }
-  }, [rawUserName, roomId, router]);
+  }, [rawUserName, roomId, router, urlImportant]);
 
   const userName = useMemo(
     () => (isHost ? `${rawUserName || 'Guest'} (Host)` : (rawUserName || 'Guest')),
@@ -414,6 +454,9 @@ function RoomContent() {
   const [token, setToken] = useState("");
   const [serverUrl, setServerUrl] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
+  const [detectedImportant, setDetectedImportant] = useState(false);
+  const [joinRole, setJoinRole] = useState("");
+  const isImportant = urlImportant || detectedImportant;
 
   const [isRecording, setIsRecording] = useState(false);
   const [transcript, setTranscript] = useState("");
@@ -456,16 +499,23 @@ function RoomContent() {
 
     const fetchToken = async () => {
       try {
+        const payload: Record<string, unknown> = { room: roomId, username: userName };
+        if (urlImportant) {
+          payload.mode = "important";
+          payload.isHost = isHost;
+        }
         const res = await fetch("/api/get-token", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ room: roomId, username: userName }),
+          body: JSON.stringify(payload),
         });
         const data = await res.json();
         
         if (data.token && data.url) {
           setToken(data.token);
           setServerUrl(data.url);
+          if (data.important) setDetectedImportant(true);
+          if (data.role) setJoinRole(data.role);
         } else {
           setErrorMsg(data.error || "Failed to fetch connection token.");
         }
@@ -474,7 +524,7 @@ function RoomContent() {
       }
     };
     fetchToken();
-  }, [roomId, userName, rawUserName]);
+  }, [roomId, userName, rawUserName, urlImportant, isHost]);
 
   useEffect(() => {
     if (chatEndRef.current) {
@@ -523,7 +573,7 @@ function RoomContent() {
               }
             }
 
-            if (isHost && tileName !== myCleanName) {
+            if (isHost && !isImportant && tileName !== myCleanName) {
               tile.style.position = 'relative';
               if (!tile.querySelector('.host-control-btn')) {
                 const btnContainer = document.createElement('div');
@@ -557,7 +607,7 @@ function RoomContent() {
     syncAndApplyAvatars();
     
     return () => clearInterval(interval);
-  }, [rawUserName, isHost]);
+  }, [rawUserName, isHost, isImportant]);
 
   useEffect(() => {
     const onVisibility = () => {
@@ -605,10 +655,11 @@ function RoomContent() {
   }, []);
 
   const copyInviteLink = useCallback(() => {
-    const inviteLink = `${window.location.origin}/room?id=${roomId}`;
+    const modeQuery = isImportant ? "&mode=important" : "";
+    const inviteLink = `${window.location.origin}/room?id=${roomId}${modeQuery}`;
     navigator.clipboard.writeText(inviteLink);
     showDynamicToast("Invite link copied to clipboard!");
-  }, [roomId, showDynamicToast]);
+  }, [roomId, showDynamicToast, isImportant]);
 
   const handleDownloadReport = () => {
     if (!summary) return;
@@ -1040,7 +1091,7 @@ function RoomContent() {
   }
 
   return (
-    <div className="room-stage relative flex flex-col h-[100dvh] w-full bg-[#04050A] overflow-hidden font-sans">
+    <div className={`room-stage relative flex flex-col h-[100dvh] w-full bg-[#04050A] overflow-hidden font-sans${isImportant ? " important-meeting" : ""}`}>
       
       <NetworkBackground />
 
@@ -1049,11 +1100,11 @@ function RoomContent() {
         <span className="font-medium text-sm">{toastMsg || "Success!"}</span>
       </div>
 
-      <div className="flex-none px-6 py-4 bg-black/50 backdrop-blur-md border-b border-gray-800/50 flex justify-between items-center z-40">
-        <h1 className="text-white text-base lg:text-lg font-bold truncate max-w-[200px] sm:max-w-xs drop-shadow-[0_0_8px_rgba(0,229,255,0.5)]">Room: <span className="text-[#00e5ff]">{roomId}</span></h1>
+      <div className="flex-none px-6 py-4 bg-black/40 backdrop-blur-xl border-b border-white/10 flex justify-between items-center z-40">
+        <h1 className="text-white text-base lg:text-lg font-bold truncate max-w-[200px] sm:max-w-xs drop-shadow-[0_0_8px_rgba(0,229,255,0.5)]">Room: <span className="text-cyan-300">{roomId}</span>{isImportant ? " · Important Meeting" : ""}</h1>
         <div className="flex items-center gap-2">
           <AboutDspacesButton onClick={() => setAboutOpen(true)} compact />
-          <button onClick={copyInviteLink} className="bg-[#0f172a] hover:bg-[#1e293b] text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all border border-gray-700 hover:border-[#00e5ff]/50 flex items-center gap-2 shadow-[0_0_10px_rgba(0,229,255,0.1)]">
+          <button onClick={copyInviteLink} className="bg-white/5 hover:bg-white/10 text-white px-4 py-2 rounded-2xl text-sm font-semibold transition-all border border-white/10 hover:border-cyan-400/40 flex items-center gap-2 shadow-lg shadow-indigo-500/10">
             <svg className="w-4 h-4 text-[#00e5ff]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
             <span className="hidden sm:inline">Copy Invite Link</span>
             <span className="sm:hidden">Copy</span>
@@ -1068,12 +1119,16 @@ function RoomContent() {
         onDisconnected={handleRoomDisconnect}
         showDynamicToast={showDynamicToast}
         setMaxParticipants={setMaxParticipants}
+        isImportant={isImportant}
+        isHost={isHost}
+        roomId={roomId}
+        joinRole={joinRole}
       />
 
       {!isAIPanelOpen && (
         <button 
           onClick={() => setIsAIPanelOpen(true)} 
-          className="absolute bottom-24 right-4 sm:right-8 z-50 bg-[#0f172a] hover:bg-[#1e293b] text-white px-5 py-3 rounded-full shadow-[0_0_20px_rgba(0,229,255,0.2)] border border-[#00e5ff]/30 font-bold flex items-center gap-2 transition-all hover:scale-105 hover:shadow-[0_0_25px_rgba(0,255,136,0.3)]"
+          className="absolute bottom-24 right-4 sm:right-8 z-50 bg-white/10 hover:bg-white/15 text-white px-5 py-3 rounded-full shadow-lg shadow-cyan-500/20 border border-white/10 font-bold flex items-center gap-2 backdrop-blur-xl transition-all hover:scale-105 hover:border-cyan-400/40"
         >
           <span className="text-[#00ff88]">✨</span> Ask AI
         </button>

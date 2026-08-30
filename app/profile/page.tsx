@@ -184,8 +184,8 @@ export default function ProfilePage() {
   return (
     <main className="min-h-screen bg-[#030712] text-white font-sans relative overflow-x-hidden flex flex-col">
       
-      <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-[#00e5ff]/5 blur-[120px] rounded-full pointer-events-none"></div>
-      <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-[#00ff88]/5 blur-[120px] rounded-full pointer-events-none"></div>
+      <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-cyan-400/10 blur-[140px] rounded-full pointer-events-none"></div>
+      <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-fuchsia-500/10 blur-[140px] rounded-full pointer-events-none"></div>
       
       {toastMsg && (
         <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[1000] bg-[#0f172a] border border-[#00e5ff]/30 text-white px-6 py-3 rounded-full shadow-[0_0_20px_rgba(0,229,255,0.2)] font-semibold text-sm animate-fade-in-up flex items-center gap-3">
@@ -194,13 +194,13 @@ export default function ProfilePage() {
         </div>
       )}
 
-      <nav className="relative z-10 flex justify-between items-center px-6 sm:px-10 py-5 border-b border-gray-800/50 bg-black/20 backdrop-blur-md">
-        <h1 onClick={() => router.push('/')} className="text-2xl font-extrabold cursor-pointer bg-gradient-to-r from-[#00e5ff] to-[#00ff88] bg-clip-text text-transparent drop-shadow-md transition-transform hover:scale-105">
+      <nav className="relative z-10 flex justify-between items-center px-6 sm:px-10 py-5 border-b border-white/10 bg-black/30 backdrop-blur-xl">
+        <h1 onClick={() => router.push('/')} className="text-2xl font-extrabold cursor-pointer bg-gradient-to-r from-cyan-400 via-indigo-400 to-fuchsia-400 bg-clip-text text-transparent drop-shadow-md transition-transform hover:scale-105">
           dSpaces
         </h1>
         <div className="flex items-center gap-3">
           <AboutDspacesButton onClick={() => setAboutOpen(true)} />
-          <button onClick={() => router.push('/')} className="text-sm font-bold bg-[#0f172a] border border-gray-700 hover:border-[#00e5ff]/50 text-white px-5 py-2.5 rounded-xl transition-all shadow-lg">
+          <button onClick={() => router.push('/')} className="text-sm font-bold bg-white/5 border border-white/10 hover:border-cyan-400/40 text-white px-5 py-2.5 rounded-2xl transition-all shadow-lg shadow-indigo-500/10">
             Back to Home
           </button>
         </div>
@@ -210,8 +210,9 @@ export default function ProfilePage() {
         
         <div className="w-full md:w-1/3 flex flex-col gap-6">
           
-          <div className="bg-[#0f172a]/80 backdrop-blur-xl border border-gray-800/80 hover:border-[#00e5ff]/30 rounded-[2rem] p-8 flex flex-col items-center text-center shadow-[0_8px_30px_rgb(0,0,0,0.5)] transition-all">
-            <div className="relative w-28 h-28 flex items-center justify-center rounded-full mb-5 border-2 border-[#00e5ff] shadow-[0_0_25px_rgba(0,229,255,0.3)] bg-gray-900 group overflow-hidden">
+          <div className="bg-white/5 backdrop-blur-2xl border border-white/10 hover:border-cyan-400/30 rounded-3xl p-8 flex flex-col items-center text-center shadow-2xl shadow-indigo-500/10 transition-all">
+            <div className="relative w-28 h-28 flex items-center justify-center rounded-full mb-5 p-[3px] bg-gradient-to-br from-cyan-400 via-indigo-500 to-fuchsia-500 shadow-[0_0_30px_rgba(99,102,241,0.35)] group">
+              <div className="relative w-full h-full rounded-full overflow-hidden bg-slate-950 flex items-center justify-center">
               {avatar.startsWith("data:image") ? (
                 <img src={avatar} alt="Profile" className="w-full h-full object-cover" />
               ) : (
@@ -219,12 +220,13 @@ export default function ProfilePage() {
               )}
               
               {isEditing && (
-                <label className="absolute inset-0 bg-black/70 backdrop-blur-sm flex flex-col items-center justify-center cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity">
+                <label className="absolute inset-0 bg-black/70 backdrop-blur-sm flex flex-col items-center justify-center cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity rounded-full">
                   <svg className="w-6 h-6 text-[#00ff88] mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
                   <span className="text-[9px] font-bold text-white uppercase tracking-wider">Upload</span>
                   <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
                 </label>
               )}
+              </div>
             </div>
             
             {isEditing ? (
@@ -233,7 +235,7 @@ export default function ProfilePage() {
                   type="text" 
                   value={userName} 
                   onChange={(e) => setUserName(e.target.value)} 
-                  className="w-full bg-black/50 border border-gray-700 rounded-xl px-4 py-3 text-center focus:border-[#00e5ff] text-white outline-none font-semibold transition-colors"
+                  className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 text-center focus:border-cyan-400 text-white outline-none font-semibold transition-all"
                 />
                 <div className="flex flex-wrap justify-center gap-2 mb-2">
                   {avatars.map((a) => (
@@ -242,7 +244,7 @@ export default function ProfilePage() {
                     </button>
                   ))}
                 </div>
-                <button onClick={saveProfile} className="w-full bg-gradient-to-r from-[#00ff88] to-[#00e5ff] text-black font-extrabold py-3 rounded-xl shadow-[0_0_15px_rgba(0,255,136,0.3)] hover:scale-[1.02] transition-all">
+                <button onClick={saveProfile} className="w-full bg-gradient-to-r from-emerald-400 to-cyan-400 text-black font-extrabold py-3 rounded-2xl shadow-lg shadow-emerald-500/20 hover:shadow-emerald-500/40 hover:scale-[1.02] transition-all">
                   Save Changes
                 </button>
               </div>
@@ -250,17 +252,17 @@ export default function ProfilePage() {
               <>
                 <h2 className="text-2xl font-black mb-1 tracking-tight text-white">{userName}</h2>
                 <p className="text-gray-400 text-xs font-medium uppercase tracking-widest mb-6">Web3 Explorer</p>
-                <button onClick={() => setIsEditing(true)} className="w-full bg-[#1e293b] hover:bg-[#334155] border border-gray-700 text-white font-bold py-3 rounded-xl transition-all shadow-lg">
+                <button onClick={() => setIsEditing(true)} className="w-full bg-white/5 hover:bg-white/10 border border-white/10 text-white font-bold py-3 rounded-2xl transition-all shadow-lg shadow-indigo-500/10">
                   Edit Profile
                 </button>
               </>
             )}
           </div>
 
-          <div className="bg-[#0f172a]/80 backdrop-blur-xl border border-gray-800/80 rounded-[2rem] p-6 shadow-[0_8px_30px_rgb(0,0,0,0.5)] flex flex-col gap-4">
+          <div className="bg-white/5 backdrop-blur-2xl border border-white/10 rounded-3xl p-6 shadow-2xl shadow-indigo-500/10 flex flex-col gap-4">
             <h3 className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-2 pl-2">Linked Accounts</h3>
             
-            <div className="flex flex-col bg-black/40 rounded-2xl border border-gray-800/80 overflow-hidden">
+            <div className="flex flex-col bg-black/30 rounded-2xl border border-white/10 overflow-hidden">
               <div className="flex items-center justify-between p-4">
                 <div className="flex items-center gap-3">
                   <div className="bg-blue-500/10 p-2.5 rounded-xl text-blue-400 border border-blue-500/20">
@@ -280,21 +282,21 @@ export default function ProfilePage() {
                 <div className="p-4 bg-[#1e293b]/50 border-t border-gray-800 flex flex-col gap-3">
                   {!linkOtpSent ? (
                     <>
-                      <input type="email" placeholder="Enter your email" value={linkEmailInput} onChange={(e)=>setLinkEmailInput(e.target.value)} className="w-full bg-black/50 border border-gray-700 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-blue-500 text-white" />
+                      <input type="email" placeholder="Enter your email" value={linkEmailInput} onChange={(e)=>setLinkEmailInput(e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-2xl px-4 py-2.5 text-sm outline-none focus:border-indigo-400 text-white transition-all" />
                       {/* FIX: Corrected onClick handler here */}
-                      <button onClick={handleSendLinkOTP} disabled={loading} className="w-full bg-blue-600 hover:bg-blue-500 text-sm py-2.5 rounded-xl font-bold transition-colors">{loading ? "Wait..." : "Send Secure OTP"}</button>
+                      <button onClick={handleSendLinkOTP} disabled={loading} className="w-full bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-sm py-2.5 rounded-2xl font-bold transition-all shadow-lg shadow-indigo-500/20">{loading ? "Wait..." : "Send Secure OTP"}</button>
                     </>
                   ) : (
                     <>
-                      <input type="text" placeholder="• • • • • •" value={linkOtpInput} onChange={(e)=>setLinkOtpInput(e.target.value)} className="w-full bg-black/50 border border-gray-700 rounded-xl px-4 py-2.5 text-lg font-bold tracking-widest text-center outline-none focus:border-[#00ff88] text-white" />
-                      <button onClick={handleVerifyLinkOTP} disabled={loading} className="w-full bg-[#00ff88] hover:bg-[#00e5ff] text-black text-sm py-2.5 rounded-xl font-bold transition-colors">{loading ? "Verifying..." : "Verify & Link"}</button>
+                      <input type="text" placeholder="• • • • • •" value={linkOtpInput} onChange={(e)=>setLinkOtpInput(e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-2xl px-4 py-2.5 text-lg font-bold tracking-widest text-center outline-none focus:border-emerald-400 text-white transition-all" />
+                      <button onClick={handleVerifyLinkOTP} disabled={loading} className="w-full bg-gradient-to-r from-emerald-400 to-cyan-400 hover:from-emerald-300 hover:to-cyan-300 text-black text-sm py-2.5 rounded-2xl font-bold transition-all shadow-lg shadow-emerald-500/20">{loading ? "Verifying..." : "Verify & Link"}</button>
                     </>
                   )}
                 </div>
               )}
             </div>
 
-            <div className="flex items-center justify-between p-4 bg-black/40 rounded-2xl border border-gray-800/80">
+            <div className="flex items-center justify-between p-4 bg-black/30 rounded-2xl border border-white/10">
               <div className="flex items-center gap-3">
                 <div className="bg-purple-500/10 p-2.5 rounded-xl text-purple-400 border border-purple-500/20">
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
@@ -309,25 +311,25 @@ export default function ProfilePage() {
               )}
             </div>
 
-            <button onClick={handleLogout} className="w-full mt-4 bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white font-bold py-3.5 rounded-xl transition-all border border-red-500/20 hover:border-transparent">
+            <button onClick={handleLogout} className="w-full mt-4 bg-red-500/10 hover:bg-red-500 text-red-400 hover:text-white font-bold py-3.5 rounded-2xl transition-all border border-red-500/20 hover:border-transparent shadow-lg hover:shadow-red-500/20">
               Log Out Securely
             </button>
           </div>
         </div>
 
         <div className="w-full md:w-2/3 flex flex-col">
-          <div className="bg-[#0f172a]/80 backdrop-blur-xl border border-gray-800/80 rounded-[2rem] p-6 sm:p-10 shadow-[0_8px_30px_rgb(0,0,0,0.5)] flex-grow">
+          <div className="bg-white/5 backdrop-blur-2xl border border-white/10 rounded-3xl p-6 sm:p-10 shadow-2xl shadow-indigo-500/10 flex-grow">
             
-            <div className="flex justify-between items-center mb-8 border-b border-gray-800/50 pb-4">
+            <div className="flex justify-between items-center mb-8 border-b border-white/10 pb-4">
               <h2 className="text-2xl font-extrabold text-white">Meeting History</h2>
-              <span className="bg-[#00e5ff]/10 text-[#00e5ff] text-[10px] uppercase tracking-wider font-bold px-4 py-1.5 rounded-full border border-[#00e5ff]/30 shadow-[0_0_10px_rgba(0,229,255,0.1)]">
+              <span className="bg-cyan-400/10 text-cyan-300 text-[10px] uppercase tracking-wider font-bold px-4 py-1.5 rounded-full border border-cyan-400/20 shadow-lg shadow-cyan-500/10">
                 Last 10 Meetings
               </span>
             </div>
 
             <div className="flex flex-col gap-4">
               {history.length > 0 ? history.map((meeting, index) => (
-                <div key={index} className="p-5 bg-black/40 border border-gray-800/80 hover:border-[#00e5ff]/40 hover:bg-[#1e293b]/40 rounded-2xl transition-all duration-300 flex flex-col sm:flex-row justify-between sm:items-center gap-4 group">
+                <div key={index} className="p-5 bg-black/30 border border-white/10 hover:border-cyan-400/40 hover:bg-white/5 rounded-2xl transition-all duration-300 flex flex-col sm:flex-row justify-between sm:items-center gap-4 group shadow-lg shadow-black/20">
                   <div className="flex flex-col">
                     <div className="flex items-center gap-3 mb-1.5">
                       <span className="text-lg font-black text-white group-hover:text-[#00e5ff] transition-colors">{meeting.id}</span>
@@ -342,13 +344,13 @@ export default function ProfilePage() {
                   </div>
                   <button 
                     onClick={() => setViewSummary(meeting.summary)}
-                    className="bg-[#00e5ff]/10 hover:bg-[#00e5ff] text-[#00e5ff] hover:text-black px-5 py-2.5 rounded-xl text-xs font-extrabold transition-all border border-[#00e5ff]/30 hover:shadow-[0_0_15px_rgba(0,229,255,0.4)] flex items-center justify-center gap-2"
+                    className="bg-cyan-400/10 hover:bg-cyan-400 text-cyan-300 hover:text-black px-5 py-2.5 rounded-2xl text-xs font-extrabold transition-all border border-cyan-400/30 hover:shadow-lg hover:shadow-cyan-500/30 flex items-center justify-center gap-2"
                   >
                     View Report ✨
                   </button>
                 </div>
               )) : (
-                <div className="text-center py-16 flex flex-col items-center justify-center bg-black/20 rounded-2xl border border-gray-800/50 border-dashed">
+                <div className="text-center py-16 flex flex-col items-center justify-center bg-black/20 rounded-2xl border border-white/10 border-dashed">
                   <div className="w-16 h-16 bg-gray-900 rounded-full flex items-center justify-center mb-4 border border-gray-800">
                     <svg className="w-8 h-8 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"></path></svg>
                   </div>
@@ -361,7 +363,7 @@ export default function ProfilePage() {
         </div>
       </section>
 
-      <footer className="w-full mt-auto py-8 flex flex-col items-center justify-center gap-5 border-t border-gray-800/60 bg-black/40 backdrop-blur-md relative z-10">
+      <footer className="w-full mt-auto py-8 flex flex-col items-center justify-center gap-5 border-t border-white/10 bg-black/40 backdrop-blur-xl relative z-10">
         <h3 className="text-gray-500 text-xs font-black tracking-[0.25em] uppercase">
           BUILD BY <span className="text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.4)]">JUBAYIR69</span>
         </h3>
@@ -380,7 +382,7 @@ export default function ProfilePage() {
 
       {viewSummary && (
         <div className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#0f172a] border border-[#00e5ff]/30 rounded-3xl p-8 max-w-2xl w-full shadow-[0_0_50px_rgba(0,229,255,0.15)] transform transition-all">
+          <div className="bg-slate-950/90 backdrop-blur-2xl border border-white/10 rounded-3xl p-8 max-w-2xl w-full shadow-2xl shadow-cyan-500/10 transform transition-all">
             <div className="flex justify-between items-center mb-6 border-b border-gray-800 pb-4">
               <h3 className="text-xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-[#00e5ff] to-[#00ff88] flex items-center gap-2">
                 ✨ Meeting Report
