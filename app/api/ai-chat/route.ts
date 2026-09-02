@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic';
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { transcript, question, language = "English" } = body;
+    const { transcript, question, language = "Auto" } = body;
 
     if (!transcript) return NextResponse.json({ success: false, error: "No transcript." });
     if (!question) return NextResponse.json({ success: false, error: "Please enter a question." });
@@ -28,9 +28,16 @@ export async function POST(req: Request) {
 
     const generateUrl = `https://generativelanguage.googleapis.com/v1beta/${selectedModel}:generateContent?key=${apiKey}`;
 
+    const autoLanguage = !language || language === "Auto" || language === "auto-detect";
+    const outputLanguageRule = autoLanguage
+      ? "Automatically detect the language of the user's question (and the transcript). Write your final answer in that same language."
+      : `Write your final answer completely in: **${language}**. Still understand the question and transcript even if they are in a different language.`;
+
     const prompt = `You are an expert AI Meeting Assistant. Based ONLY on the following live meeting transcript, answer the user's question professionally.
     
-    CRITICAL RULE: You MUST write your final answer completely in: **${language}**.
+    Automatically detect the spoken/written language(s). Do not assume a preset language. Understand mixed-language input, native scripts, and romanized speech-to-text (e.g. "shiksha" = শিক্ষা).
+    If you reply in Bengali, you MUST use Bengali script, never Latin transliteration.
+    CRITICAL RULE: ${outputLanguageRule}
     
     [Meeting Transcript]
     ${transcript}

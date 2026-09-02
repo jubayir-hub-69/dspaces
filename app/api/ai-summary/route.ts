@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic';
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { transcript, language = "English" } = body;
+    const { transcript, language = "Auto" } = body;
 
     if (!transcript || transcript.trim() === '') {
       return NextResponse.json({ success: false, error: "No conversation detected." });
@@ -31,18 +31,32 @@ export async function POST(req: Request) {
 
     const generateUrl = `https://generativelanguage.googleapis.com/v1beta/${selectedModel}:generateContent?key=${apiKey}`;
 
+    const summaryMode = language === "Both" ? "Both" : language === "Bengali" ? "Bengali" : language === "Auto" || language === "auto-detect" ? "Auto" : language || "English";
+    const outputLanguageRule =
+      summaryMode === "Both"
+        ? `Write the COMPLETE summary twice, with the same structure both times:
+    First, an English section titled "## English".
+    Then, a Bengali section titled "## বাংলা" written entirely in Bengali native script (বাংলা লিপি), not romanized.`
+        : summaryMode === "Bengali"
+          ? "Write the ENTIRE response (including headings) in Bengali native script (বাংলা লিপি). Never romanize."
+          : summaryMode === "Auto"
+            ? "Automatically detect the language(s) in the transcript. Write the ENTIRE response in the native script of that language. If Bengali was spoken, use বাংলা লিপি (e.g. শিক্ষা), never Latin transliteration."
+            : `Write the ENTIRE response (including headings) perfectly in: **${summaryMode}**. If the output language is Bengali, use native Bengali script, never romanization.`;
+
     const prompt = `You are a highly advanced Executive AI Meeting Assistant. 
     
     Important Instructions:
-    1. Ignore errors, stuttering, or mispronunciations in the raw transcript. Understand the core context.
-    2. CRITICAL RULE: You MUST write the ENTIRE response (including headings) perfectly in: **${language}**.
-    3. Structure your response professionally using markdown:
+    1. Automatically detect the spoken language(s) in the raw transcript. The transcript may be in native script OR romanized (e.g. "shiksha" meaning শিক্ষা). Understand the original language; do not assume it is English.
+    2. Ignore errors, stuttering, or mispronunciations in the raw transcript. Understand the core context.
+    3. CRITICAL RULE: ${outputLanguageRule}
+    4. Never transliterate Bengali/Hindi into English letters in the summary output unless the chosen summary language is English.
+    5. Structure your response professionally using markdown:
     
-    ✨ **Executive Summary:** (A clear paragraph summarizing the core discussion in ${language})
+    ✨ **Executive Summary:** (A clear paragraph summarizing the core discussion)
     
-    📌 **Key Highlights:** (Brief bullet points in ${language})
+    📌 **Key Highlights:** (Brief bullet points)
     
-    🎯 **Action Items / To-Do:** (Decisions made or tasks assigned in ${language})
+    🎯 **Action Items / To-Do:** (Decisions made or tasks assigned)
     
     [Raw Meeting Transcript]:
     "${transcript}"`;

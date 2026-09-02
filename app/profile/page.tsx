@@ -5,14 +5,27 @@ import { useRouter } from "next/navigation";
 import { useWallet } from "@solana/wallet-adapter-react";
 import dynamic from "next/dynamic";
 import { AboutDspacesButton, AboutDspacesModal } from "../../components/AboutDspacesModal";
+import {
+  checkEmailAvailable,
+  checkWalletAvailable,
+  fetchServerAccount,
+  getDb,
+  initialFromAccount,
+  isImageAvatar,
+  linkIdentityOnServer,
+  mergeServerAccount,
+  normalizeEmail,
+  readJsonSafe,
+  resolvePrimaryAuth,
+  saveDb,
+  withPrimaryAuth,
+  writePrimaryAuthFlag,
+} from "../../lib/account";
 
 const WalletMultiButton = dynamic(
   () => import("@solana/wallet-adapter-react-ui").then((mod) => mod.WalletMultiButton),
   { ssr: false }
 );
-
-const getDb = () => JSON.parse(localStorage.getItem('dspaces_db') || '[]');
-const saveDb = (db: any[]) => localStorage.setItem('dspaces_db', JSON.stringify(db));
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -20,7 +33,7 @@ export default function ProfilePage() {
 
   const [myAcc, setMyAcc] = useState<any>(null);
   const [userName, setUserName] = useState("User");
-  const [avatar, setAvatar] = useState("👨‍🚀");
+  const [avatar, setAvatar] = useState("");
   const [history, setHistory] = useState<any[]>([]);
   const [isEditing, setIsEditing] = useState(false);
 
@@ -29,17 +42,22 @@ export default function ProfilePage() {
   const [linkEmailInput, setLinkEmailInput] = useState("");
   const [linkOtpInput, setLinkOtpInput] = useState("");
   const [linkOtpSent, setLinkOtpSent] = useState(false);
+  const [otpCooldown, setOtpCooldown] = useState(0);
   const [loading, setLoading] = useState(false);
   
   const [viewSummary, setViewSummary] = useState<string | null>(null);
   const [aboutOpen, setAboutOpen] = useState(false);
 
-  const avatars = ["👨‍🚀", "🥷", "🧙‍♂️", "👩‍🎤", "🤖", "👻", "🦊", "🐼"];
-
   const showToast = (msg: string) => {
     setToastMsg(msg);
     setTimeout(() => setToastMsg(""), 4000);
   };
+
+  useEffect(() => {
+    if (otpCooldown <= 0) return;
+    const timer = setTimeout(() => setOtpCooldown((value) => Math.max(0, value - 1)), 1000);
+    return () => clearTimeout(timer);
+  }, [otpCooldown]);
 
   useEffect(() => {
     const sessionId = localStorage.getItem("dspaces_active_session");
@@ -51,70 +69,100 @@ export default function ProfilePage() {
     const acc = db.find((a: any) => a.email === sessionId || a.wallet === sessionId);
     
     if (acc) {
-      setMyAcc(acc);
-      setUserName(acc.name);
-      setAvatar(acc.avatar);
+      const primary = resolvePrimaryAuth(acc);
+      const nextAcc = withPrimaryAuth(acc, primary);
+      if (acc.primary_auth !== primary) {
+        saveDb(db.map((a: any) => (a.email === acc.email && a.wallet === acc.wallet) ? nextAcc : a));
+      }
+      writePrimaryAuthFlag(primary);
+      setMyAcc(nextAcc);
+      setUserName(nextAcc.name);
+      setAvatar(isImageAvatar(nextAcc.avatar) ? nextAcc.avatar : "");
       
       const historyKey = `dspaces_history_${sessionId}`;
       const savedHistory = JSON.parse(localStorage.getItem(historyKey) || "[]");
       setHistory(savedHistory);
+
+      fetchServerAccount({ email: nextAcc.email, wallet: nextAcc.wallet }).then((serverAcc) => {
+        if (!serverAcc) return;
+        const hydrated = mergeServerAccount(serverAcc, nextAcc);
+        if (!hydrated) return;
+        setMyAcc(hydrated);
+        setUserName(hydrated.name || nextAcc.name);
+        setAvatar(isImageAvatar(hydrated.avatar) ? hydrated.avatar : "");
+      });
     } else {
       router.push("/");
     }
   }, [router]);
 
   useEffect(() => {
-    if (connected && publicKey && myAcc && !myAcc.wallet) {
-      const walletStr = publicKey.toString();
-      fetch('/api/global-db', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'CHECK', type: 'wallet', value: walletStr })
-      }).then(res => res.json()).then(data => {
-        if (data.isUsed) {
-          showToast("This Wallet is already used by another account!");
-          disconnect();
-        } else {
-          fetch('/api/global-db', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'ADD', type: 'wallet', value: walletStr })
-          });
+    if (!connected || !publicKey || !myAcc) return;
+    const walletStr = publicKey.toString();
 
-          const db = getDb();
-          const updatedDb = db.map((a: any) => (a.email === myAcc.email && a.wallet === myAcc.wallet) ? { ...a, wallet: walletStr } : a);
-          saveDb(updatedDb);
-          setMyAcc({ ...myAcc, wallet: walletStr });
-          showToast("Wallet linked successfully!");
-        }
-      });
+    if (myAcc.wallet) {
+      if (myAcc.wallet !== walletStr) {
+        let cancelled = false;
+        checkWalletAvailable(walletStr, myAcc).then((result) => {
+          if (cancelled || result.ok) return;
+          showToast(result.error || "This wallet is already used in another account.");
+          disconnect();
+        });
+        return () => { cancelled = true; };
+      }
+      return;
     }
+
+    let cancelled = false;
+    checkWalletAvailable(walletStr, myAcc).then(async (result) => {
+      if (cancelled) return;
+      if (!result.ok) {
+        showToast(result.error || "This wallet is already used in another account.");
+        disconnect();
+        return;
+      }
+      const linked = await linkIdentityOnServer("wallet", walletStr, myAcc);
+      if (cancelled) return;
+      if (!linked.ok) {
+        showToast(linked.error || "This wallet is already used in another account.");
+        disconnect();
+        return;
+      }
+
+      const hydrated = mergeServerAccount(linked.account || { ...myAcc, wallet: walletStr }, { ...myAcc, wallet: walletStr });
+      setMyAcc(hydrated || { ...myAcc, wallet: walletStr });
+      showToast("Wallet linked successfully!");
+    });
+    return () => { cancelled = true; };
   }, [connected, publicKey, myAcc, disconnect]);
 
   // FIX: This is the function that was mismatched in the button click
   const handleSendLinkOTP = async () => {
-    const emailInput = linkEmailInput.trim();
+    const emailInput = normalizeEmail(linkEmailInput);
     if (!emailInput) return showToast("Please enter an email address.");
+    if (otpCooldown > 0) return;
     
     setLoading(true);
     try {
-      const dbRes = await fetch('/api/global-db', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'CHECK', type: 'email', value: emailInput })
-      });
-      const dbData = await dbRes.json();
-
-      if (dbData.isUsed) {
+      const availability = await checkEmailAvailable(emailInput, myAcc);
+      if (!availability.ok) {
         setLoading(false);
-        return showToast("This Email is already used by another account!");
+        return showToast(availability.error || "This email is already connected to another account.");
       }
 
       const res = await fetch("/api/send-otp", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: emailInput }),
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: emailInput, purpose: "link", currentEmail: myAcc?.email || null, currentWallet: myAcc?.wallet || null }),
       });
-      const data = await res.json();
-      if (data.success) { 
-        setLinkOtpSent(true); 
-        showToast("OTP sent to email!"); 
-      } else { showToast(data.error || "Failed to send OTP."); }
+      const data = await readJsonSafe(res);
+      if (!res.ok || !data.success) {
+        showToast(data.error || "This email is already connected to another account.");
+        return;
+      }
+      setLinkOtpSent(true);
+      setOtpCooldown(60);
+      showToast("OTP sent to email!");
     } catch (err) { showToast("Error sending OTP."); } 
     finally { setLoading(false); }
   };
@@ -124,22 +172,15 @@ export default function ProfilePage() {
     setLoading(true);
     try {
       const res = await fetch("/api/verify-otp", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ otp: linkOtpInput.trim() }),
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ otp: linkOtpInput.trim(), purpose: "link", currentEmail: myAcc?.email || null, currentWallet: myAcc?.wallet || null }),
       });
-      const data = await res.json();
+      const data = await readJsonSafe(res);
       if (data.success) {
-        const verifiedEmail = data.email;
-        
-        fetch('/api/global-db', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'ADD', type: 'email', value: verifiedEmail })
-        });
-
-        const db = getDb();
-        const updatedDb = db.map((a: any) => (a.email === myAcc.email && a.wallet === myAcc.wallet) ? { ...a, email: verifiedEmail } : a);
-        saveDb(updatedDb);
-
-        setMyAcc({ ...myAcc, email: verifiedEmail });
+        const verifiedEmail = normalizeEmail(data.email);
+        const hydrated = mergeServerAccount(data.account || { ...myAcc, email: verifiedEmail }, { ...myAcc, email: verifiedEmail });
+        setMyAcc(hydrated || { ...myAcc, email: verifiedEmail });
         setLinkingEmail(false);
         showToast("Email successfully linked!");
       } else { showToast(data.error || "Invalid OTP."); }
@@ -158,23 +199,26 @@ export default function ProfilePage() {
   };
 
   const saveProfile = () => {
+    const nextAvatar = isImageAvatar(avatar) ? avatar : "";
     const db = getDb();
-    const updatedDb = db.map((a: any) => (a.email === myAcc.email && a.wallet === myAcc.wallet) ? { ...a, name: userName, avatar: avatar } : a);
+    const updatedDb = db.map((a: any) => (a.email === myAcc.email && a.wallet === myAcc.wallet) ? { ...a, name: userName, avatar: nextAvatar } : a);
     saveDb(updatedDb);
     
     fetch('/api/sync-avatar', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: userName, avatar: avatar })
+      body: JSON.stringify({ name: userName, avatar: nextAvatar })
     }).catch(e => console.log(e));
 
-    setMyAcc({ ...myAcc, name: userName, avatar: avatar });
+    setAvatar(nextAvatar);
+    setMyAcc({ ...myAcc, name: userName, avatar: nextAvatar });
     setIsEditing(false);
     showToast("Profile Updated Successfully!");
   };
 
   const handleLogout = () => {
     localStorage.removeItem("dspaces_active_session");
+    localStorage.removeItem("dspaces_primary_auth");
     if (connected) disconnect();
     router.push("/");
   };
@@ -213,10 +257,12 @@ export default function ProfilePage() {
           <div className="bg-white/5 backdrop-blur-2xl border border-white/10 hover:border-cyan-400/30 rounded-3xl p-8 flex flex-col items-center text-center shadow-2xl shadow-indigo-500/10 transition-all">
             <div className="relative w-28 h-28 flex items-center justify-center rounded-full mb-5 p-[3px] bg-gradient-to-br from-cyan-400 via-indigo-500 to-fuchsia-500 shadow-[0_0_30px_rgba(99,102,241,0.35)] group">
               <div className="relative w-full h-full rounded-full overflow-hidden bg-slate-950 flex items-center justify-center">
-              {avatar.startsWith("data:image") ? (
+              {isImageAvatar(avatar) ? (
                 <img src={avatar} alt="Profile" className="w-full h-full object-cover" />
               ) : (
-                <span className="text-6xl drop-shadow-[0_0_10px_rgba(255,255,255,0.2)]">{avatar}</span>
+                <span className="text-5xl font-black tracking-tight text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.2)]">
+                  {initialFromAccount(userName, myAcc.email, myAcc.wallet)}
+                </span>
               )}
               
               {isEditing && (
@@ -237,13 +283,7 @@ export default function ProfilePage() {
                   onChange={(e) => setUserName(e.target.value)} 
                   className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 text-center focus:border-cyan-400 text-white outline-none font-semibold transition-all"
                 />
-                <div className="flex flex-wrap justify-center gap-2 mb-2">
-                  {avatars.map((a) => (
-                    <button key={a} onClick={() => setAvatar(a)} className={`text-2xl p-1.5 rounded-xl transition-all ${avatar === a ? 'bg-[#00e5ff]/20 border border-[#00e5ff] scale-110' : 'hover:bg-gray-800 border border-transparent'}`}>
-                      {a}
-                    </button>
-                  ))}
-                </div>
+                <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">Initials are used unless you upload a photo</p>
                 <button onClick={saveProfile} className="w-full bg-gradient-to-r from-emerald-400 to-cyan-400 text-black font-extrabold py-3 rounded-2xl shadow-lg shadow-emerald-500/20 hover:shadow-emerald-500/40 hover:scale-[1.02] transition-all">
                   Save Changes
                 </button>
@@ -284,12 +324,13 @@ export default function ProfilePage() {
                     <>
                       <input type="email" placeholder="Enter your email" value={linkEmailInput} onChange={(e)=>setLinkEmailInput(e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-2xl px-4 py-2.5 text-sm outline-none focus:border-indigo-400 text-white transition-all" />
                       {/* FIX: Corrected onClick handler here */}
-                      <button onClick={handleSendLinkOTP} disabled={loading} className="w-full bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-sm py-2.5 rounded-2xl font-bold transition-all shadow-lg shadow-indigo-500/20">{loading ? "Wait..." : "Send Secure OTP"}</button>
+                      <button onClick={handleSendLinkOTP} disabled={loading || otpCooldown > 0} className="w-full bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 disabled:from-gray-700 disabled:to-gray-700 text-sm py-2.5 rounded-2xl font-bold transition-all shadow-lg shadow-indigo-500/20">{loading ? "Wait..." : otpCooldown > 0 ? `Resend in ${otpCooldown}s` : "Send Secure OTP"}</button>
                     </>
                   ) : (
                     <>
                       <input type="text" placeholder="• • • • • •" value={linkOtpInput} onChange={(e)=>setLinkOtpInput(e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-2xl px-4 py-2.5 text-lg font-bold tracking-widest text-center outline-none focus:border-emerald-400 text-white transition-all" />
                       <button onClick={handleVerifyLinkOTP} disabled={loading} className="w-full bg-gradient-to-r from-emerald-400 to-cyan-400 hover:from-emerald-300 hover:to-cyan-300 text-black text-sm py-2.5 rounded-2xl font-bold transition-all shadow-lg shadow-emerald-500/20">{loading ? "Verifying..." : "Verify & Link"}</button>
+                      <button type="button" onClick={handleSendLinkOTP} disabled={loading || otpCooldown > 0} className="w-full bg-transparent border border-white/10 hover:border-cyan-400/40 disabled:opacity-60 text-gray-300 text-sm py-2.5 rounded-2xl font-bold transition-all">{loading ? "Sending..." : otpCooldown > 0 ? `Resend in ${otpCooldown}s` : "Resend OTP"}</button>
                     </>
                   )}
                 </div>
@@ -329,25 +370,35 @@ export default function ProfilePage() {
 
             <div className="flex flex-col gap-4">
               {history.length > 0 ? history.map((meeting, index) => (
-                <div key={index} className="p-5 bg-black/30 border border-white/10 hover:border-cyan-400/40 hover:bg-white/5 rounded-2xl transition-all duration-300 flex flex-col sm:flex-row justify-between sm:items-center gap-4 group shadow-lg shadow-black/20">
+                <div key={meeting.historyId || index} className="p-5 bg-black/30 border border-white/10 hover:border-cyan-400/40 hover:bg-white/5 rounded-2xl transition-all duration-300 flex flex-col sm:flex-row justify-between sm:items-center gap-4 group shadow-lg shadow-black/20">
                   <div className="flex flex-col">
                     <div className="flex items-center gap-3 mb-1.5">
-                      <span className="text-lg font-black text-white group-hover:text-[#00e5ff] transition-colors">{meeting.id}</span>
+                      <span className="text-lg font-black text-white group-hover:text-[#00e5ff] transition-colors">{meeting.roomName || meeting.id}</span>
                       <span className={`text-[9px] font-bold px-2 py-0.5 rounded uppercase tracking-wider ${meeting.role === 'HOST' ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' : 'bg-gray-800 text-gray-400 border border-gray-700'}`}>
                         {meeting.role}
                       </span>
                     </div>
                     <span className="text-xs font-medium text-gray-500 flex items-center gap-1.5">
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                      {meeting.date}
+                      {meeting.date}{meeting.time ? ` · ${meeting.time}` : ""}
+                    </span>
+                    <span className="text-xs font-medium text-gray-400 mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <span>Duration: {meeting.duration || "—"}</span>
+                      <span>Participants: {meeting.participants ?? meeting.participantCount ?? 1}</span>
                     </span>
                   </div>
-                  <button 
-                    onClick={() => setViewSummary(meeting.summary)}
-                    className="bg-cyan-400/10 hover:bg-cyan-400 text-cyan-300 hover:text-black px-5 py-2.5 rounded-2xl text-xs font-extrabold transition-all border border-cyan-400/30 hover:shadow-lg hover:shadow-cyan-500/30 flex items-center justify-center gap-2"
-                  >
-                    View Report ✨
-                  </button>
+                  {meeting.summary ? (
+                    <button 
+                      onClick={() => setViewSummary(meeting.summary)}
+                      className="bg-cyan-400/10 hover:bg-cyan-400 text-cyan-300 hover:text-black px-5 py-2.5 rounded-2xl text-xs font-extrabold transition-all border border-cyan-400/30 hover:shadow-lg hover:shadow-cyan-500/30 flex items-center justify-center gap-2"
+                    >
+                      View Report ✨
+                    </button>
+                  ) : (
+                    <span className="text-[10px] uppercase tracking-wider font-bold text-gray-500 px-3 py-2 rounded-xl border border-white/10 bg-black/30">
+                      No AI summary
+                    </span>
+                  )}
                 </div>
               )) : (
                 <div className="text-center py-16 flex flex-col items-center justify-center bg-black/20 rounded-2xl border border-white/10 border-dashed">
@@ -355,7 +406,7 @@ export default function ProfilePage() {
                     <svg className="w-8 h-8 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"></path></svg>
                   </div>
                   <p className="text-gray-400 font-medium text-sm">No meeting history found.</p>
-                  <p className="text-gray-600 text-xs mt-1">Start an AI recording in a room to see reports here.</p>
+                  <p className="text-gray-600 text-xs mt-1">Join a room and your call details will appear here.</p>
                 </div>
               )}
             </div>
@@ -368,7 +419,7 @@ export default function ProfilePage() {
           BUILD BY <span className="text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.4)]">JUBAYIR69</span>
         </h3>
         <div className="flex items-center gap-5">
-          <a href="https://x.com/jubayirhaider90" target="_blank" rel="noopener noreferrer" className="w-12 h-12 rounded-full bg-[#0f172a] border border-gray-700 flex items-center justify-center text-gray-400 hover:text-white hover:border-white hover:bg-black hover:shadow-[0_0_15px_rgba(255,255,255,0.3)] transition-all duration-300 hover:-translate-y-1 group">
+          <a href="https://x.com/alr80171" target="_blank" rel="noopener noreferrer" className="w-12 h-12 rounded-full bg-[#0f172a] border border-gray-700 flex items-center justify-center text-gray-400 hover:text-white hover:border-white hover:bg-black hover:shadow-[0_0_15px_rgba(255,255,255,0.3)] transition-all duration-300 hover:-translate-y-1 group">
             <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 group-hover:scale-110 transition-transform"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.005 4.15H5.059z"/></svg>
           </a>
           <a href="https://github.com/jubayir-hub-69" target="_blank" rel="noopener noreferrer" className="w-12 h-12 rounded-full bg-[#0f172a] border border-gray-700 flex items-center justify-center text-gray-400 hover:text-black hover:border-white hover:bg-white hover:shadow-[0_0_20px_rgba(255,255,255,0.5)] transition-all duration-300 hover:-translate-y-1 group">

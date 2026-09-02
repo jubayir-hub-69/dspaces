@@ -1,11 +1,28 @@
 import nodemailer from 'nodemailer';
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
+import { isIdentityUsed, isKvConfigured, normalizeIdentity, takenError } from '../../../lib/identity-store';
 
 export async function POST(req: Request) {
   try {
-    const { email } = await req.json();
+    const body = await req.json();
+    const email = normalizeIdentity("email", body.email || "");
+    const purpose = body.purpose === "link" ? "link" : "login";
     if (!email) return NextResponse.json({ error: 'Email is required' }, { status: 400 });
+
+    if (purpose === "link" && isKvConfigured()) {
+      try {
+        const taken = await isIdentityUsed("email", email, body.currentEmail || null);
+        if (taken) {
+          return NextResponse.json(
+            { error: takenError("email") },
+            { status: 400 }
+          );
+        }
+      } catch {
+        // Occupancy lookup failed; continue and let send-mail errors surface separately.
+      }
+    }
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const secret = process.env.NEXTAUTH_SECRET || 'fallback_secret';

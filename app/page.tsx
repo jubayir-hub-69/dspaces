@@ -6,6 +6,7 @@ import { useState, useEffect, useRef } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
 import "@solana/wallet-adapter-react-ui/styles.css";
 import { AboutDspacesButton, AboutDspacesModal } from "../components/AboutDspacesModal";
+import { fetchServerAccount, formatPrimaryIdentity, getDb, mergeServerAccount, normalizeEmail, readJsonSafe, resolvePrimaryAuth, saveDb, withPrimaryAuth, writePrimaryAuthFlag } from "../lib/account";
 
 // ==========================================
 // NEW: Animated Connected Nodes Background
@@ -102,9 +103,6 @@ const WalletMultiButton = dynamic(
   { ssr: false }
 );
 
-const getDb = () => JSON.parse(localStorage.getItem('dspaces_db') || '[]');
-const saveDb = (db: any[]) => localStorage.setItem('dspaces_db', JSON.stringify(db));
-
 export default function Home() {
   const router = useRouter();
   const { connected, publicKey, disconnect } = useWallet();
@@ -115,6 +113,7 @@ export default function Home() {
   const [email, setEmail] = useState("");
   const [otp, setOtp] = useState("");
   const [otpSent, setOtpSent] = useState(false);
+  const [otpCooldown, setOtpCooldown] = useState(0);
   const [loading, setLoading] = useState(false);
   const [statusMsg, setStatusMsg] = useState("");
   const [isDark, setIsDark] = useState(true);
@@ -128,13 +127,34 @@ export default function Home() {
   };
 
   useEffect(() => {
+    if (otpCooldown <= 0) return;
+    const timer = setTimeout(() => setOtpCooldown((value) => Math.max(0, value - 1)), 1000);
+    return () => clearTimeout(timer);
+  }, [otpCooldown]);
+
+  useEffect(() => {
     const sessionId = localStorage.getItem("dspaces_active_session");
     if (sessionId) {
       const db = getDb();
-      const acc = db.find((a: any) => a.email === sessionId || a.wallet === sessionId);
+      let acc = db.find((a: any) => a.email === sessionId || a.wallet === sessionId);
       if (acc) {
+        const primary = resolvePrimaryAuth(acc);
+        if (acc.primary_auth !== primary || acc.primaryAuth !== primary) {
+          acc = withPrimaryAuth(acc, primary);
+          const dbAfter = db.map((a: any) => (a.email === acc.email && a.wallet === acc.wallet) ? acc : a);
+          saveDb(dbAfter);
+        }
+        writePrimaryAuthFlag(primary);
         setMyAcc(acc);
         setUserName(acc.name);
+        fetchServerAccount({ email: acc.email, wallet: acc.wallet }).then((serverAcc) => {
+          if (!serverAcc) return;
+          const hydrated = mergeServerAccount(serverAcc, acc);
+          if (hydrated) {
+            setMyAcc(hydrated);
+            setUserName(hydrated.name);
+          }
+        });
       } else {
         localStorage.removeItem("dspaces_active_session");
       }
@@ -162,18 +182,32 @@ export default function Home() {
         fetch('/api/global-db', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'ADD', type: 'wallet', value: walletStr })
+        }).then((res) => res.json()).then((data) => {
+          let db = getDb();
+          let local = db.find((a: any) => a.wallet === walletStr);
+          if (!local) {
+            local = withPrimaryAuth({ email: null, wallet: walletStr, name: walletStr.substring(0, 6), avatar: "" }, "wallet");
+          }
+          const acc = mergeServerAccount(data.account, local) || local;
+          const primary = resolvePrimaryAuth(acc);
+          writePrimaryAuthFlag(primary);
+          const sessionKey = primary === "email" && acc.email ? acc.email : walletStr;
+          localStorage.setItem("dspaces_active_session", sessionKey);
+          setMyAcc(acc);
+          setUserName(acc.name);
+        }).catch(() => {
+          let db = getDb();
+          let acc = db.find((a: any) => a.wallet === walletStr);
+          if (!acc) {
+            acc = withPrimaryAuth({ email: null, wallet: walletStr, name: walletStr.substring(0, 6), avatar: "" }, "wallet");
+            db.push(acc);
+            saveDb(db);
+          }
+          writePrimaryAuthFlag(resolvePrimaryAuth(acc));
+          localStorage.setItem("dspaces_active_session", walletStr);
+          setMyAcc(acc);
+          setUserName(acc.name);
         });
-
-        let db = getDb();
-        let acc = db.find((a: any) => a.wallet === walletStr);
-        if (!acc) {
-          acc = { email: null, wallet: walletStr, name: walletStr.substring(0, 6), avatar: '👨‍🚀' };
-          db.push(acc);
-          saveDb(db);
-        }
-        localStorage.setItem("dspaces_active_session", walletStr);
-        setMyAcc(acc);
-        setUserName(acc.name);
       }
     } else if (!connected && sessionId && myAcc && myAcc.wallet === sessionId) {
       handleLogout();
@@ -182,15 +216,21 @@ export default function Home() {
 
   const handleSendOTP = async () => {
     if (!email.trim()) return showToast("Please enter a valid email address.");
+    if (otpCooldown > 0) return;
     setLoading(true);
     setStatusMsg("Sending secure code...");
     try {
       const res = await fetch("/api/send-otp", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: email.trim() }),
       });
-      const data = await res.json();
-      if (data.success) { setOtpSent(true); setStatusMsg("OTP sent to your email!"); } 
-      else setStatusMsg(data.error || "Failed to send OTP.");
+      const data = await readJsonSafe(res);
+      if (!res.ok || !data.success) {
+        setStatusMsg(data.error || "Failed to send OTP.");
+        return;
+      }
+      setOtpSent(true);
+      setOtpCooldown(60);
+      setStatusMsg("OTP sent to your email!");
     } catch (err) { setStatusMsg("Error sending OTP."); } 
     finally { setLoading(false); }
   };
@@ -203,22 +243,23 @@ export default function Home() {
       const res = await fetch("/api/verify-otp", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ otp: otp.trim() }),
       });
-      const data = await res.json();
+      const data = await readJsonSafe(res);
       if (data.success) {
-        const verifiedEmail = data.email;
+        const verifiedEmail = normalizeEmail(data.email);
         fetch('/api/global-db', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'ADD', type: 'email', value: verifiedEmail })
         });
         let db = getDb();
-        let acc = db.find((a: any) => a.email === verifiedEmail);
-        if (!acc) {
-          acc = { email: verifiedEmail, wallet: null, name: verifiedEmail.split("@")[0], avatar: '👨‍🚀' };
-          db.push(acc);
-          saveDb(db);
+        let local = db.find((a: any) => a.email && normalizeEmail(a.email) === verifiedEmail);
+        if (!local) {
+          local = withPrimaryAuth({ email: verifiedEmail, wallet: null, name: verifiedEmail.split("@")[0], avatar: "" }, "email");
         }
-
-        localStorage.setItem("dspaces_active_session", verifiedEmail);
+        const acc = mergeServerAccount(data.account, local) || local;
+        const primary = resolvePrimaryAuth(acc);
+        writePrimaryAuthFlag(primary);
+        const sessionKey = primary === "wallet" && acc.wallet ? acc.wallet : verifiedEmail;
+        localStorage.setItem("dspaces_active_session", sessionKey);
         setMyAcc(acc);
         setUserName(acc.name);
         setStatusMsg("");
@@ -229,6 +270,7 @@ export default function Home() {
 
   const handleLogout = () => {
     localStorage.removeItem("dspaces_active_session");
+    localStorage.removeItem("dspaces_primary_auth");
     setMyAcc(null);
     setEmail(""); setOtp(""); setOtpSent(false); setStatusMsg("");
     if (connected) disconnect();
@@ -278,9 +320,7 @@ export default function Home() {
     router.push(`/room?id=${finalId}&name=${userName.trim()}${modeQuery}`);
   };
 
-  const displayAccountInfo = myAcc?.email 
-    ? myAcc.email 
-    : (myAcc?.wallet ? `${myAcc.wallet.substring(0, 4)}...${myAcc.wallet.substring(myAcc.wallet.length - 4)}` : "");
+  const displayAccountInfo = formatPrimaryIdentity(myAcc);
 
   return (
     <main className={`min-h-screen transition-colors duration-500 relative overflow-hidden font-sans ${isDark ? 'bg-[#030712] text-white' : 'bg-gray-50 text-gray-900'}`}>
@@ -358,7 +398,7 @@ export default function Home() {
             <div className="flex flex-col sm:flex-row gap-6">
               <div className={`flex-1 text-left p-6 rounded-2xl border backdrop-blur-md transition-all ${isDark ? 'bg-white/5 border-white/10 hover:border-indigo-400/30' : 'bg-gray-50 border-gray-200'}`}>
                 <label className={`flex items-center gap-2 text-xs font-bold uppercase tracking-widest mb-4 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}><span className="w-2 h-2 rounded-full bg-indigo-500"></span>Option 1: Web3 Wallet</label>
-                <div className="flex justify-center w-full relative z-40 opacity-80 cursor-not-allowed">
+                <div className="flex justify-center w-full relative z-40">
                   <WalletMultiButton style={{ width: "100%", justifyContent: "center", backgroundColor: "#4f46e5", borderRadius: "12px", height: "48px", fontWeight: "bold" }} />
                 </div>
               </div>
@@ -369,13 +409,14 @@ export default function Home() {
                   {!otpSent ? (
                     <div className="flex flex-col gap-3">
                       <input type="email" placeholder="name@example.com" value={email} onChange={(e) => setEmail(e.target.value)} className={`w-full px-4 py-3.5 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all ${isDark ? 'bg-black/40 border border-white/10 text-white placeholder:text-gray-600' : 'bg-white border border-gray-300 text-gray-900 placeholder:text-gray-400'}`}/>
-                      <button onClick={handleSendOTP} disabled={loading} className="w-full py-3.5 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 disabled:from-gray-700 disabled:to-gray-700 text-white font-bold rounded-2xl text-sm transition-all shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/40 active:scale-[0.98]">{loading ? "Sending Secure Code..." : "Get OTP Code"}</button>
+                      <button onClick={handleSendOTP} disabled={loading || otpCooldown > 0} className="w-full py-3.5 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 disabled:from-gray-700 disabled:to-gray-700 text-white font-bold rounded-2xl text-sm transition-all shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/40 active:scale-[0.98]">{loading ? "Sending Secure Code..." : otpCooldown > 0 ? `Resend in ${otpCooldown}s` : "Get OTP Code"}</button>
                     </div>
                   ) : (
                     <div className="flex flex-col gap-3">
                       <div className="flex justify-between items-center mb-1"><span className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Code sent to <span className={isDark ? 'text-white' : 'text-black'}>{email}</span></span><button onClick={() => { setOtpSent(false); setOtp(""); }} className="text-xs text-blue-500 hover:text-blue-400 underline">Change</button></div>
                       <input type="text" placeholder="• • • • • •" value={otp} maxLength={6} onChange={(e) => setOtp(e.target.value)} className={`w-full px-4 py-3.5 rounded-2xl text-center text-2xl tracking-[0.5em] font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all ${isDark ? 'bg-black/40 border border-white/10 text-white' : 'bg-white border border-gray-300 text-gray-900'}`}/>
                       <button onClick={handleVerifyOTP} disabled={loading} className="w-full py-3.5 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 disabled:from-gray-700 disabled:to-gray-700 text-black font-bold rounded-2xl text-sm transition-all shadow-lg shadow-emerald-500/20 active:scale-[0.98]">{loading ? "Verifying..." : "Secure Login"}</button>
+                      <button type="button" onClick={handleSendOTP} disabled={loading || otpCooldown > 0} className="w-full py-2.5 bg-transparent border border-white/10 hover:border-cyan-400/40 disabled:opacity-60 text-gray-300 font-bold rounded-2xl text-sm transition-all">{loading ? "Sending..." : otpCooldown > 0 ? `Resend in ${otpCooldown}s` : "Resend OTP"}</button>
                     </div>
                   )}
                 </div>

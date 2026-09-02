@@ -30,3 +30,69 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #374151;
 }
+
+/* Solana wallet-adapter modal — match dSpaces dark theme */
+.wallet-adapter-modal-wrapper {
+  background: rgba(3, 7, 18, 0.78) !important;
+  backdrop-filter: blur(16px);
+}
+
+.wallet-adapter-modal {
+  background: #0b1220 !important;
+  color: #fff !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 1.25rem !important;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55), 0 0 40px rgba(0, 229, 255, 0.08) !important;
+}
+
+.wallet-adapter-modal-title {
+  color: #fff !important;
+  font-weight: 800 !important;
+}
+
+.wallet-adapter-modal-list {
+  margin: 0 !important;
+}
+
+.wallet-adapter-modal-list li {
+  margin-bottom: 0.5rem !important;
+}
+
+.wallet-adapter-modal-list .wallet-adapter-button {
+  background: rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 0.9rem !important;
+  color: #fff !important;
+  font-weight: 700 !important;
+}
+
+.wallet-adapter-modal-list .wallet-adapter-button:hover {
+  background: rgba(99, 102, 241, 0.22) !important;
+  border-color: rgba(34, 211, 238, 0.4) !important;
+}
+
+.wallet-adapter-modal-button-close {
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
+.wallet-adapter-modal-button-close svg {
+  fill: #e2e8f0 !important;
+}
+
+.wallet-adapter-button {
+  font-family: inherit !important;
+}
+
+.wallet-adapter-dropdown-list {
+  background: #0b1220 !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 0.9rem !important;
+}
+
+.wallet-adapter-dropdown-list-item {
+  color: #fff !important;
+}
+
+.wallet-adapter-dropdown-list-item:hover {
+  background: rgba(99, 102, 241, 0.22) !important;
+}

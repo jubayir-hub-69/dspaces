@@ -236,8 +236,8 @@ function ImportantParticipantTile({ supremeHostId }: { supremeHostId?: string })
               className="h-24 w-24 rounded-full border-2 border-cyan-400 object-cover"
             />
           ) : (
-            <div className="flex h-24 w-24 items-center justify-center rounded-full bg-slate-700 text-3xl font-bold text-white">
-              {avatar && !String(avatar).startsWith("data:image") ? avatar : initialsFor(label)}
+            <div className="flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-br from-indigo-600 to-cyan-500 text-3xl font-bold text-white">
+              {initialsFor(label)}
             </div>
           )}
         </div>

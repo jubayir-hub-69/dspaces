@@ -4,7 +4,6 @@ import { Suspense, useEffect, useState, useRef, useCallback, useMemo, memo, type
 import { useSearchParams, useRouter } from "next/navigation";
 import { 
   LiveKitRoom, 
-  VideoConference, 
   RoomAudioRenderer,
   useRoomContext,
   useLocalParticipantPermissions,
@@ -14,19 +13,14 @@ import "./room-layout.css";
 import { AboutDspacesButton, AboutDspacesModal } from "../../components/AboutDspacesModal";
 import { ImportantMeetingControls } from "../../components/ImportantMeetingControls";
 import { ImportantMeetingStage } from "../../components/ImportantMeetingStage";
+import { RoomVideoConference } from "../../components/RoomVideoConference";
+import { upsertMeetingHistory } from "../../lib/meeting-history";
+import { initialFromAccount, initialsAvatarHtml, isImageAvatar } from "../../lib/account";
 
 interface ChatMessage {
   sender: "user" | "ai";
   text: string;
 }
-
-const languageMap: Record<string, string> = {
-  "English": "en-US",
-  "Bengali": "bn-BD",
-  "Spanish": "es-ES",
-  "French": "fr-FR",
-  "Hindi": "hi-IN"
-};
 
 const isLikelyMobileDevice = () => {
   if (typeof navigator === "undefined") return false;
@@ -368,6 +362,7 @@ type RoomCallStageProps = {
   token: string;
   serverUrl: string;
   rawUserName: string;
+  onConnected: () => void;
   onDisconnected: () => void;
   showDynamicToast: (msg: string) => void;
   setMaxParticipants: (n: any) => void;
@@ -381,6 +376,7 @@ const RoomCallStage = memo(function RoomCallStage({
   token,
   serverUrl,
   rawUserName,
+  onConnected,
   onDisconnected,
   showDynamicToast,
   setMaxParticipants,
@@ -393,7 +389,7 @@ const RoomCallStage = memo(function RoomCallStage({
   return (
     <div className="flex-1 w-full min-h-0 relative z-10 bg-transparent overflow-hidden flex flex-col">
       <LiveKitRoom
-        video={publishOnJoin}
+        video={false}
         audio={publishOnJoin}
         token={token}
         serverUrl={serverUrl}
@@ -401,6 +397,7 @@ const RoomCallStage = memo(function RoomCallStage({
         data-lk-theme="default"
         className="h-full min-h-0 overflow-hidden"
         style={LIVEKIT_ROOM_STYLE}
+        onConnected={onConnected}
         onDisconnected={onDisconnected}
       >
         <MeetingTracker setMaxParticipants={setMaxParticipants} />
@@ -412,7 +409,7 @@ const RoomCallStage = memo(function RoomCallStage({
             showDynamicToast={showDynamicToast}
           />
         ) : (
-          <VideoConference />
+          <RoomVideoConference />
         )}
         <RoomAudioRenderer />
         <ScreenShareGuard showDynamicToast={showDynamicToast} />
@@ -478,15 +475,21 @@ function RoomContent() {
   const [isAIPanelOpen, setIsAIPanelOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
 
-  const [aiLanguage, setAiLanguage] = useState("English");
+  const [aiLanguage, setAiLanguage] = useState("Auto");
   const aiLanguageRef = useRef(aiLanguage);
   aiLanguageRef.current = aiLanguage;
+  const [summaryLanguage, setSummaryLanguage] = useState<"English" | "Bengali" | "Both">("English");
+  const sttLangRef = useRef("");
+  const restoredTranscriptRef = useRef("");
+  const restoreGenRef = useRef(0);
+  const restoreTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [aiChatInput, setAiChatInput] = useState("");
   const [aiChatHistory, setAiChatHistory] = useState<ChatMessage[]>([]);
   const [loadingChat, setLoadingChat] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   const [meetingStartTime] = useState(Date.now());
+  const meetingHistoryIdRef = useRef(`meeting_${roomId}_${meetingStartTime}`);
   const [maxParticipants, setMaxParticipants] = useState(1);
   const maxParticipantsRef = useRef(maxParticipants);
   maxParticipantsRef.current = maxParticipants;
@@ -538,9 +541,9 @@ function RoomContent() {
 
     const db = JSON.parse(localStorage.getItem('dspaces_db') || '[]');
     let myCleanName = rawUserName.replace(' (Host)', '').trim();
-    let myAvatar = '🤖';
+    let myAvatar = '';
     const me = db.find((u: any) => u.name === myCleanName);
-    if (me) myAvatar = me.avatar;
+    if (me?.avatar && isImageAvatar(me.avatar)) myAvatar = me.avatar;
 
     const syncAndApplyAvatars = async () => {
       try {
@@ -551,6 +554,7 @@ function RoomContent() {
         });
         const data = await res.json();
         const globalUserMap = data.avatars || {};
+        (window as any).__dspacesAvatars = globalUserMap;
 
         const tiles = document.querySelectorAll('.lk-participant-tile');
         tiles.forEach((tile: any) => {
@@ -561,15 +565,16 @@ function RoomContent() {
             const currentRawName = nameEl.textContent || '';
             const tileName = currentRawName.replace(' (Host)', '').replace(' (You)', '').trim();
             
-            const avatar = globalUserMap[tileName] || (db.find((u:any)=>u.name===tileName)?.avatar) || '🤖';
+            const mapped = globalUserMap[tileName] || (db.find((u:any)=>u.name===tileName)?.avatar) || '';
+            const avatar = isImageAvatar(mapped) ? mapped : `initial:${initialFromAccount(tileName)}`;
             if (!placeholder.querySelector('.custom-avatar') || placeholder.getAttribute('data-avatar') !== avatar) {
               placeholder.innerHTML = ''; 
               placeholder.setAttribute('data-avatar', avatar);
               
-              if (avatar.startsWith('data:image')) {
-                placeholder.innerHTML = `<img src="${avatar}" class="custom-avatar" style="width: 120px; height: 120px; border-radius: 50%; object-fit: cover; border: 3px solid #00e5ff; box-shadow: 0 0 25px rgba(0,229,255,0.4);" />`;
+              if (isImageAvatar(mapped)) {
+                placeholder.innerHTML = `<img src="${mapped}" class="custom-avatar" style="width: 120px; height: 120px; border-radius: 50%; object-fit: cover; border: 3px solid #00e5ff; box-shadow: 0 0 25px rgba(0,229,255,0.4);" />`;
               } else {
-                placeholder.innerHTML = `<div class="custom-avatar" style="font-size: 80px; filter: drop-shadow(0 0 20px rgba(0,255,136,0.5));">${avatar}</div>`;
+                placeholder.innerHTML = initialsAvatarHtml(tileName, 120);
               }
             }
 
@@ -633,6 +638,7 @@ function RoomContent() {
       micAudioNodeRef.current = null;
       micStreamRef.current?.getTracks().forEach((track) => track.stop());
       micStreamRef.current = null;
+      if (restoreTimerRef.current) clearTimeout(restoreTimerRef.current);
       const ctx = audioContextRef.current;
       audioContextRef.current = null;
       if (ctx && ctx.state !== "closed") {
@@ -663,7 +669,7 @@ function RoomContent() {
 
   const handleDownloadReport = () => {
     if (!summary) return;
-    const reportContent = `=======================================\n           dSpaces Meeting Report\n=======================================\n\nRoom ID: ${roomId}\nDate: ${new Date().toLocaleString()}\nLanguage: ${aiLanguage}\n\n${summary}\n\n=======================================\n          Full Raw Transcript\n=======================================\n${fullTranscriptRef.current || transcript}`;
+    const reportContent = `=======================================\n           dSpaces Meeting Report\n=======================================\n\nRoom ID: ${roomId}\nDate: ${new Date().toLocaleString()}\nLanguage: ${summaryLanguage}\n\n${summary}\n\n=======================================\n          Full Raw Transcript\n=======================================\n${restoredTranscriptRef.current || fullTranscriptRef.current || transcript}`;
     
     const blob = new Blob([reportContent], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
@@ -687,6 +693,8 @@ function RoomContent() {
   const handleClearTranscript = () => {
     setTranscript("");
     fullTranscriptRef.current = "";
+    restoredTranscriptRef.current = "";
+    sttLangRef.current = "";
     setAiChatHistory([]);
     setSummary("");
     showDynamicToast("Data cleared successfully!");
@@ -759,6 +767,55 @@ function RoomContent() {
     return { resumePromise, micPromise };
   };
 
+  const detectSttLangFromText = (text: string) => {
+    if (/[\u0980-\u09FF]/.test(text)) return "bn-BD";
+    if (/[\u0900-\u097F]/.test(text)) return "hi-IN";
+    return "";
+  };
+
+  const resolveSttLang = () => {
+    const selected = aiLanguageRef.current;
+    if (selected === "Bengali") return "bn-BD";
+    if (selected === "Hindi") return "hi-IN";
+    if (selected === "Spanish") return "es-ES";
+    if (selected === "French") return "fr-FR";
+    if (selected === "English") return "en-US";
+    return sttLangRef.current;
+  };
+
+  const runNativeScriptRestore = async (raw: string) => {
+    const text = raw.trim();
+    if (!text) return text;
+    const gen = ++restoreGenRef.current;
+    try {
+      const res = await fetch("/api/ai-native-script", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      const data = await res.json();
+      if (gen !== restoreGenRef.current) return restoredTranscriptRef.current || text;
+      if (data.success && data.text) {
+        restoredTranscriptRef.current = data.text;
+        setTranscript(data.text);
+        const detected = detectSttLangFromText(data.text);
+        if (detected && aiLanguageRef.current === "Auto" && detected !== sttLangRef.current) {
+          sttLangRef.current = detected;
+          if (isRecordingRef.current) bootSpeechRecognitionRef.current();
+        }
+        return data.text;
+      }
+    } catch {}
+    return text;
+  };
+
+  const scheduleNativeScriptRestore = (raw: string) => {
+    if (restoreTimerRef.current) clearTimeout(restoreTimerRef.current);
+    restoreTimerRef.current = setTimeout(() => {
+      void runNativeScriptRestore(raw);
+    }, 1600);
+  };
+
   const bootSpeechRecognition = () => {
     const SpeechRecognition = getSpeechRecognitionCtor();
     if (!SpeechRecognition || !isRecordingRef.current) return false;
@@ -771,7 +828,12 @@ function RoomContent() {
     recognition.continuous = !mobile;
     recognition.interimResults = true;
     recognition.maxAlternatives = 1;
-    recognition.lang = languageMap[aiLanguageRef.current] || "en-US";
+    const sttLang = resolveSttLang();
+    try {
+      recognition.lang = sttLang || "";
+    } catch {
+      // Some browsers reject an empty lang; leaving it unset uses UA detection.
+    }
 
     let currentSessionText = "";
 
@@ -781,17 +843,19 @@ function RoomContent() {
         text += event.results[i][0].transcript;
       }
       currentSessionText = text;
-      setTranscript((fullTranscriptRef.current + " " + text).trim());
+      const combined = (fullTranscriptRef.current + " " + text).trim();
+      setTranscript(combined);
+      scheduleNativeScriptRestore(combined);
     };
 
     let startedAt = Date.now();
 
     recognition.onend = () => {
-      if (generation !== translatorGenerationRef.current) return;
       if (currentSessionText) {
         fullTranscriptRef.current += " " + currentSessionText;
         currentSessionText = "";
       }
+      if (generation !== translatorGenerationRef.current) return;
       if (!isRecordingRef.current) return;
 
       if (Date.now() - startedAt < 150) {
@@ -816,6 +880,10 @@ function RoomContent() {
       if (generation !== translatorGenerationRef.current) return;
       const error = event?.error;
       if (error === "no-speech" || error === "aborted") return;
+      if (error === "language-not-supported") {
+        try { recognition.lang = "en-US"; } catch {}
+        return;
+      }
 
       if (error === "not-allowed" || error === "service-not-allowed") {
         isRecordingRef.current = false;
@@ -886,6 +954,7 @@ function RoomContent() {
     isRecordingRef.current = true;
     setIsRecording(true);
     setAiListenPaused(false);
+    if (aiLanguageRef.current === "Auto") sttLangRef.current = "";
 
     const started = bootSpeechRecognition();
     if (!started) {
@@ -931,36 +1000,25 @@ function RoomContent() {
     setSummary("");
 
     try {
+      const raw = (fullTranscriptRef.current || transcript).trim();
+      const nativeTranscript = await runNativeScriptRestore(raw);
       const res = await fetch("/api/ai-summary", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ transcript: fullTranscriptRef.current || transcript, language: aiLanguage }),
+        body: JSON.stringify({ transcript: nativeTranscript || raw, language: summaryLanguage }),
       });
       
       const data = await res.json();
       
       if (data.success) {
         setSummary(data.summary);
-        
-        try {
-          const sessionId = localStorage.getItem("dspaces_active_session");
-          if (sessionId) {
-            const historyKey = `dspaces_history_${sessionId}`;
-            const existingHistory = JSON.parse(localStorage.getItem(historyKey) || "[]");
-            
-            const newMeeting = {
-              id: roomId,
-              date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-              duration: "Ended",
-              role: isHost ? "HOST" : "PARTICIPANT",
-              summary: data.summary
-            };
-            
-            const updatedHistory = [newMeeting, ...existingHistory].slice(0, 10);
-            localStorage.setItem(historyKey, JSON.stringify(updatedHistory));
-          }
-        } catch(e) {}
-
+        upsertMeetingHistory(meetingHistoryIdRef.current, {
+          id: roomId,
+          roomName: roomId,
+          role: isHost ? "HOST" : "PARTICIPANT",
+          participants: maxParticipantsRef.current,
+          summary: data.summary,
+        });
       } else {
         setSummary(`❌ AI Error: ${data.error}`);
       }
@@ -983,7 +1041,7 @@ function RoomContent() {
       const res = await fetch("/api/ai-chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ transcript: fullTranscriptRef.current || transcript, question: query, language: aiLanguage }),
+        body: JSON.stringify({ transcript: restoredTranscriptRef.current || fullTranscriptRef.current || transcript, question: query, language: aiLanguage }),
       });
       const data = await res.json();
 
@@ -998,6 +1056,32 @@ function RoomContent() {
       setLoadingChat(false);
     }
   };
+
+  const persistMeetingHistory = useCallback((patch: { duration?: string; summary?: string; participants?: number }) => {
+    upsertMeetingHistory(meetingHistoryIdRef.current, {
+      id: roomId,
+      roomName: roomId,
+      role: isHost ? "HOST" : "PARTICIPANT",
+      participants: patch.participants ?? maxParticipantsRef.current,
+      ...patch,
+    });
+  }, [roomId, isHost]);
+
+  const handleRoomConnected = useCallback(() => {
+    persistMeetingHistory({ duration: "In progress", participants: maxParticipantsRef.current });
+  }, [persistMeetingHistory]);
+
+  useEffect(() => {
+    const onPageHide = () => {
+      const diffMs = Date.now() - meetingStartTime;
+      const diffMins = Math.floor(diffMs / 60000);
+      const diffSecs = Math.floor((diffMs % 60000) / 1000);
+      const durationStr = `${diffMins > 0 ? `${diffMins} min ` : ""}${diffSecs} sec`.trim();
+      persistMeetingHistory({ duration: durationStr, participants: maxParticipantsRef.current });
+    };
+    window.addEventListener("pagehide", onPageHide);
+    return () => window.removeEventListener("pagehide", onPageHide);
+  }, [meetingStartTime, persistMeetingHistory]);
 
   const handleRoomDisconnect = useCallback(() => {
     isRecordingRef.current = false;
@@ -1019,9 +1103,10 @@ function RoomContent() {
     if (diffMins > 0) durationStr += `${diffMins} min `;
     durationStr += `${diffSecs} sec`;
 
+    persistMeetingHistory({ duration: durationStr.trim(), participants: maxParticipantsRef.current });
     setFinalStats({ duration: durationStr, participants: maxParticipantsRef.current });
     setShowPostScreen(true);
-  }, [meetingStartTime]);
+  }, [meetingStartTime, persistMeetingHistory]);
 
   if (!rawUserName) {
     return (
@@ -1116,6 +1201,7 @@ function RoomContent() {
         token={token}
         serverUrl={serverUrl}
         rawUserName={rawUserName || "Guest"}
+        onConnected={handleRoomConnected}
         onDisconnected={handleRoomDisconnect}
         showDynamicToast={showDynamicToast}
         setMaxParticipants={setMaxParticipants}
@@ -1128,7 +1214,7 @@ function RoomContent() {
       {!isAIPanelOpen && (
         <button 
           onClick={() => setIsAIPanelOpen(true)} 
-          className="absolute bottom-24 right-4 sm:right-8 z-50 bg-white/10 hover:bg-white/15 text-white px-5 py-3 rounded-full shadow-lg shadow-cyan-500/20 border border-white/10 font-bold flex items-center gap-2 backdrop-blur-xl transition-all hover:scale-105 hover:border-cyan-400/40"
+          className="absolute bottom-24 right-4 sm:right-8 z-[45] bg-white/10 hover:bg-white/15 text-white px-5 py-3 rounded-full shadow-lg shadow-cyan-500/20 border border-white/10 font-bold flex items-center gap-2 backdrop-blur-xl transition-all hover:scale-105 hover:border-cyan-400/40"
         >
           <span className="text-[#00ff88]">✨</span> Ask AI
         </button>
@@ -1145,8 +1231,9 @@ function RoomContent() {
               onChange={(e) => setAiLanguage(e.target.value)}
               disabled={isRecording}
               className="bg-gray-900 border border-[#00e5ff]/30 text-[#00e5ff] text-xs font-bold rounded-lg px-2 py-1.5 outline-none cursor-pointer disabled:opacity-50"
-              title="Select AI Language"
+              title="Preferred AI reply language. Speech is auto-detected."
             >
+              <option value="Auto">🌐 Auto-detect</option>
               <option value="English">🇬🇧 English</option>
               <option value="Bengali">🇧🇩 বাংলা</option>
               <option value="Spanish">🇪🇸 Spanish</option>
@@ -1166,7 +1253,7 @@ function RoomContent() {
             
             <div className="bg-black/40 rounded-xl p-3.5 border border-gray-800/60 relative">
               <div className="flex justify-between items-center mb-1">
-                <h3 className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Live Transcript ({aiLanguage})</h3>
+                <h3 className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Live Transcript ({aiLanguage === "Auto" ? "Auto-detect" : aiLanguage})</h3>
                 {(transcript || aiChatHistory.length > 0) && (
                   <button onClick={handleClearTranscript} className="text-gray-400 hover:text-red-400 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 transition-colors">
                     <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
@@ -1232,7 +1319,7 @@ function RoomContent() {
                   type="text" 
                   value={aiChatInput}
                   onChange={(e) => setAiChatInput(e.target.value)}
-                  placeholder={`Ask in ${aiLanguage}...`} 
+                  placeholder={aiLanguage === "Auto" ? "Ask in any language..." : `Ask in ${aiLanguage}...`} 
                   disabled={loadingChat}
                   className="flex-1 bg-transparent text-xs text-white outline-none px-2 py-1.5 placeholder-gray-600 disabled:opacity-50"
                 />
@@ -1247,6 +1334,28 @@ function RoomContent() {
             )}
 
             <div className="flex flex-col gap-2 pb-1">
+              <div className="rounded-xl border border-white/10 bg-black/40 p-2.5">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-2">Select Summary Language</p>
+                <div className="flex flex-col gap-1.5">
+                  {([
+                    { value: "English", label: "1. English" },
+                    { value: "Bengali", label: "2. Bengali" },
+                    { value: "Both", label: "3. Both (English & Bengali)" },
+                  ] as const).map((option) => (
+                    <label key={option.value} className="flex items-center gap-2 text-xs text-gray-200 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="summary-language"
+                        value={option.value}
+                        checked={summaryLanguage === option.value}
+                        onChange={() => setSummaryLanguage(option.value)}
+                        className="accent-cyan-400"
+                      />
+                      {option.label}
+                    </label>
+                  ))}
+                </div>
+              </div>
               {!isRecording ? (
                 <button onClick={handleStartAI} className="w-full bg-gradient-to-r from-green-600 to-green-500 hover:from-green-500 hover:to-green-400 text-white font-bold py-2.5 rounded-xl transition-all text-xs shadow-[0_0_15px_rgba(0,255,136,0.1)]">
                   Start AI Recording

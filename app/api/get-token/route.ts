@@ -28,6 +28,7 @@ export async function POST(req: Request) {
 
         const at = new AccessToken(apiKey, apiSecret, {
             identity: participantName,
+            name: participantName,
         });
 
         const isImportantMode = body.mode === "important" || isImportantRoom(roomName);

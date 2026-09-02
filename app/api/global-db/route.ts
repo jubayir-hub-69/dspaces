@@ -1,45 +1,95 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from "next/server";
+import {
+  claimIdentity,
+  findAccountRecord,
+  isIdentityUsed,
+  isKvConfigured,
+  normalizeIdentity,
+  takenError,
+  upsertAccountRecord,
+  type IdentityType,
+} from "../../../lib/identity-store";
+
+function asType(type: string): IdentityType | null {
+  if (type === "email" || type === "wallet") return type;
+  return null;
+}
 
 export async function POST(req: Request) {
-    try {
-        const { action, type, value } = await req.json(); 
-        
-        const url = process.env.KV_REST_API_URL;
-        const token = process.env.KV_REST_API_TOKEN;
+  try {
+    const body = await req.json();
+    const action = body.action as string;
+    const type = asType(body.type);
+    const value = typeof body.value === "string" ? body.value : "";
+    const except =
+      type === "email"
+        ? body.except || body.currentEmail || null
+        : body.except || body.currentWallet || null;
 
-        if (!url || !token) {
-            return NextResponse.json({ success: false, error: "DB not connected" });
-        }
-
-        const key = type === 'email' ? 'dspaces_used_emails' : 'dspaces_used_wallets';
-        
-        // Fetch real-time data from Vercel Database
-        const getRes = await fetch(`${url}/get/${key}`, { 
-            headers: { Authorization: `Bearer ${token}` },
-            cache: 'no-store'
-        });
-        const getData = await getRes.json();
-        let list = getData.result ? JSON.parse(getData.result) : [];
-
-        // Check if Email/Wallet exists
-        if (action === 'CHECK') {
-            return NextResponse.json({ success: true, isUsed: list.includes(value) });
-        }
-
-        // Add new Email/Wallet to Database
-        if (action === 'ADD') {
-            if (!list.includes(value)) {
-                list.push(value);
-                await fetch(`${url}/set/${key}/${JSON.stringify(list)}`, { 
-                    method: 'POST',
-                    headers: { Authorization: `Bearer ${token}` } 
-                });
-            }
-            return NextResponse.json({ success: true });
-        }
-
-        return NextResponse.json({ success: false });
-    } catch (err) {
-        return NextResponse.json({ success: false, error: "Server error" });
+    if (!type) {
+      return NextResponse.json({ success: false, error: "Invalid identity type" }, { status: 400 });
     }
+
+    if (!isKvConfigured()) {
+      return NextResponse.json({ success: false, error: "DB not connected" }, { status: 503 });
+    }
+
+    const normalized = normalizeIdentity(type, value);
+    if (!normalized) {
+      return NextResponse.json({ success: false, error: "Missing identity value" }, { status: 400 });
+    }
+
+    if (action === "CHECK") {
+      const isUsed = await isIdentityUsed(type, normalized, except);
+      return NextResponse.json({ success: true, isUsed });
+    }
+
+    if (action === "GET_ACCOUNT") {
+      const account = await findAccountRecord({
+        email: type === "email" ? normalized : body.currentEmail || null,
+        wallet: type === "wallet" ? normalized : body.currentWallet || null,
+      });
+      return NextResponse.json({ success: true, account: account || null });
+    }
+
+    if (action === "LINK") {
+      const result = await claimIdentity(type, normalized, except);
+      if (!result.ok) {
+        return NextResponse.json(
+          { success: false, error: result.error || takenError(type), isUsed: true },
+          { status: 400 }
+        );
+      }
+      const account = await upsertAccountRecord({
+        email: type === "email" ? normalized : body.currentEmail || null,
+        wallet: type === "wallet" ? normalized : body.currentWallet || null,
+        primary_auth: body.primary_auth,
+        name: body.name,
+      });
+      return NextResponse.json({ success: true, account });
+    }
+
+    if (action === "ADD") {
+      const result = await claimIdentity(type, normalized, except);
+      if (!result.ok && result.error !== takenError(type)) {
+        return NextResponse.json({ success: false, error: result.error }, { status: 500 });
+      }
+      const existing = await findAccountRecord({
+        email: type === "email" ? normalized : null,
+        wallet: type === "wallet" ? normalized : null,
+      });
+      const account =
+        existing ||
+        (await upsertAccountRecord({
+          email: type === "email" ? normalized : null,
+          wallet: type === "wallet" ? normalized : null,
+          primary_auth: type === "email" ? "email" : "wallet",
+        }));
+      return NextResponse.json({ success: true, alreadyUsed: !result.ok, account });
+    }
+
+    return NextResponse.json({ success: false, error: "Unknown action" }, { status: 400 });
+  } catch (err) {
+    return NextResponse.json({ success: false, error: "Server error" }, { status: 500 });
+  }
 }

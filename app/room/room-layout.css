@@ -176,6 +176,43 @@
   overflow: hidden;
 }
 
+/* Mobile: chat is a bottom-sheet overlay so it never squashes the video grid
+   or covers the control bar / Ask AI button while closed. */
+@media (max-width: 767px) {
+  .room-stage .lk-video-conference {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .room-stage .lk-video-conference-inner {
+    width: 100%;
+    flex: 1 1 0%;
+    min-width: 0;
+  }
+
+  .room-stage .lk-chat {
+    position: relative !important;
+    top: auto !important;
+    right: auto !important;
+    bottom: auto !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 100% !important;
+    max-height: 100%;
+    border-left: none;
+    background: #0b1220;
+  }
+
+  .room-stage .lk-chat[style*="display: none"],
+  .room-stage .lk-chat.lk-chat-hidden {
+    display: none !important;
+  }
+}
+
+.dspaces-identified-entry .lk-message-type {
+  display: none !important;
+}
+
 /* ---- Focus layout: screen share takes the remaining space, tiles in a rail ---- */
 
 .room-stage .lk-focus-layout {
