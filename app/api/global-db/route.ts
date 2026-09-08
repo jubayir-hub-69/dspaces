@@ -4,6 +4,7 @@ import {
   findAccountRecord,
   isIdentityUsed,
   isKvConfigured,
+  matchesAccount,
   normalizeIdentity,
   takenError,
   upsertAccountRecord,
@@ -40,8 +41,20 @@ export async function POST(req: Request) {
     }
 
     if (action === "CHECK") {
-      const isUsed = await isIdentityUsed(type, normalized, except);
-      return NextResponse.json({ success: true, isUsed });
+      const target = await findAccountRecord(
+        type === "email" ? { email: normalized } : { wallet: normalized }
+      );
+      const sameAccount = !!(target && matchesAccount(target, body.currentEmail || null, body.currentWallet || null));
+      const isUsed = !sameAccount && (
+        !!target ||
+        (await isIdentityUsed(type, normalized, except))
+      );
+      return NextResponse.json({
+        success: true,
+        isUsed,
+        error: isUsed ? takenError(type) : undefined,
+        account: sameAccount ? target : undefined,
+      });
     }
 
     if (action === "GET_ACCOUNT") {
@@ -49,16 +62,33 @@ export async function POST(req: Request) {
         email: type === "email" ? normalized : body.currentEmail || null,
         wallet: type === "wallet" ? normalized : body.currentWallet || null,
       });
-      return NextResponse.json({ success: true, account: account || null });
+      return NextResponse.json({
+        success: true,
+        account: account
+          ? { email: account.email || null, wallet: account.wallet || null, primary_auth: account.primary_auth, name: account.name, avatar: account.avatar || "" }
+          : null,
+      });
     }
 
     if (action === "LINK") {
-      const result = await claimIdentity(type, normalized, except);
-      if (!result.ok) {
+      const target = await findAccountRecord(
+        type === "email" ? { email: normalized } : { wallet: normalized }
+      );
+      const sameAccount = !!(target && matchesAccount(target, body.currentEmail || null, body.currentWallet || null));
+      if (target && !sameAccount) {
         return NextResponse.json(
-          { success: false, error: result.error || takenError(type), isUsed: true },
+          { success: false, error: takenError(type), isUsed: true },
           { status: 400 }
         );
+      }
+      if (!sameAccount) {
+        const result = await claimIdentity(type, normalized, except);
+        if (!result.ok) {
+          return NextResponse.json(
+            { success: false, error: result.error || takenError(type), isUsed: true },
+            { status: 400 }
+          );
+        }
       }
       const account = await upsertAccountRecord({
         email: type === "email" ? normalized : body.currentEmail || null,

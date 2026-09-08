@@ -137,6 +137,7 @@ export default function Home() {
     if (sessionId) {
       const db = getDb();
       let acc = db.find((a: any) => a.email === sessionId || a.wallet === sessionId);
+      const looksLikeEmail = sessionId.includes("@");
       if (acc) {
         const primary = resolvePrimaryAuth(acc);
         if (acc.primary_auth !== primary || acc.primaryAuth !== primary) {
@@ -147,17 +148,21 @@ export default function Home() {
         writePrimaryAuthFlag(primary);
         setMyAcc(acc);
         setUserName(acc.name);
-        fetchServerAccount({ email: acc.email, wallet: acc.wallet }).then((serverAcc) => {
-          if (!serverAcc) return;
-          const hydrated = mergeServerAccount(serverAcc, acc);
-          if (hydrated) {
-            setMyAcc(hydrated);
-            setUserName(hydrated.name);
-          }
-        });
-      } else {
-        localStorage.removeItem("dspaces_active_session");
       }
+      fetchServerAccount({
+        email: looksLikeEmail ? sessionId : acc?.email || null,
+        wallet: looksLikeEmail ? acc?.wallet || null : sessionId,
+      }).then((serverAcc) => {
+        if (!serverAcc) {
+          if (!acc) localStorage.removeItem("dspaces_active_session");
+          return;
+        }
+        const hydrated = mergeServerAccount(serverAcc, acc || serverAcc);
+        if (hydrated) {
+          setMyAcc(hydrated);
+          setUserName(hydrated.name);
+        }
+      });
     }
 
     const urlParams = new URLSearchParams(window.location.search);
@@ -182,13 +187,24 @@ export default function Home() {
         fetch('/api/global-db', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'ADD', type: 'wallet', value: walletStr })
-        }).then((res) => res.json()).then((data) => {
+        }).then((res) => res.json()).then(async (data) => {
+          const fetched = await fetchServerAccount({
+            email: data.account?.email || null,
+            wallet: walletStr,
+          });
+          const serverAcc = fetched || data.account || null;
           let db = getDb();
-          let local = db.find((a: any) => a.wallet === walletStr);
+          let local = db.find((a: any) => a.wallet === walletStr)
+            || db.find((a: any) => serverAcc?.email && a.email && normalizeEmail(a.email) === normalizeEmail(serverAcc.email));
           if (!local) {
-            local = withPrimaryAuth({ email: null, wallet: walletStr, name: walletStr.substring(0, 6), avatar: "" }, "wallet");
+            local = withPrimaryAuth({
+              email: serverAcc?.email || null,
+              wallet: walletStr,
+              name: serverAcc?.name || walletStr.substring(0, 6),
+              avatar: serverAcc?.avatar || "",
+            }, "wallet");
           }
-          const acc = mergeServerAccount(data.account, local) || local;
+          const acc = mergeServerAccount(serverAcc, local) || local;
           const primary = resolvePrimaryAuth(acc);
           writePrimaryAuthFlag(primary);
           const sessionKey = primary === "email" && acc.email ? acc.email : walletStr;
@@ -245,17 +261,28 @@ export default function Home() {
       });
       const data = await readJsonSafe(res);
       if (data.success) {
-        const verifiedEmail = normalizeEmail(data.email);
+        const verifiedEmail = normalizeEmail(data.email || data.account?.email || email);
+        const fetched = await fetchServerAccount({
+          email: verifiedEmail,
+          wallet: data.wallet || data.account?.wallet || null,
+        });
+        const serverAcc = fetched || data.account || null;
         fetch('/api/global-db', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'ADD', type: 'email', value: verifiedEmail })
         });
         let db = getDb();
-        let local = db.find((a: any) => a.email && normalizeEmail(a.email) === verifiedEmail);
+        let local = db.find((a: any) => a.email && normalizeEmail(a.email) === verifiedEmail)
+          || db.find((a: any) => serverAcc?.wallet && a.wallet === serverAcc.wallet);
         if (!local) {
-          local = withPrimaryAuth({ email: verifiedEmail, wallet: null, name: verifiedEmail.split("@")[0], avatar: "" }, "email");
+          local = withPrimaryAuth({
+            email: verifiedEmail,
+            wallet: serverAcc?.wallet || data.wallet || null,
+            name: serverAcc?.name || verifiedEmail.split("@")[0],
+            avatar: serverAcc?.avatar || "",
+          }, "email");
         }
-        const acc = mergeServerAccount(data.account, local) || local;
+        const acc = mergeServerAccount(serverAcc, local) || local;
         const primary = resolvePrimaryAuth(acc);
         writePrimaryAuthFlag(primary);
         const sessionKey = primary === "wallet" && acc.wallet ? acc.wallet : verifiedEmail;

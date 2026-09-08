@@ -67,33 +67,55 @@ export default function ProfilePage() {
     }
     const db = getDb();
     const acc = db.find((a: any) => a.email === sessionId || a.wallet === sessionId);
-    
+    const looksLikeEmail = sessionId.includes("@");
+    const seed = acc || (looksLikeEmail
+      ? { email: sessionId, wallet: null, name: sessionId.split("@")[0], avatar: "" }
+      : { email: null, wallet: sessionId, name: sessionId.substring(0, 6), avatar: "" });
+
+    const applyAccount = (next: any) => {
+      const primary = resolvePrimaryAuth(next);
+      const nextAcc = withPrimaryAuth(next, primary);
+      writePrimaryAuthFlag(primary);
+      setMyAcc(nextAcc);
+      setUserName(nextAcc.name);
+      setAvatar(isImageAvatar(nextAcc.avatar) ? nextAcc.avatar : "");
+    };
+
     if (acc) {
       const primary = resolvePrimaryAuth(acc);
       const nextAcc = withPrimaryAuth(acc, primary);
       if (acc.primary_auth !== primary) {
         saveDb(db.map((a: any) => (a.email === acc.email && a.wallet === acc.wallet) ? nextAcc : a));
       }
-      writePrimaryAuthFlag(primary);
-      setMyAcc(nextAcc);
-      setUserName(nextAcc.name);
-      setAvatar(isImageAvatar(nextAcc.avatar) ? nextAcc.avatar : "");
-      
+      applyAccount(nextAcc);
       const historyKey = `dspaces_history_${sessionId}`;
       const savedHistory = JSON.parse(localStorage.getItem(historyKey) || "[]");
       setHistory(savedHistory);
-
-      fetchServerAccount({ email: nextAcc.email, wallet: nextAcc.wallet }).then((serverAcc) => {
-        if (!serverAcc) return;
-        const hydrated = mergeServerAccount(serverAcc, nextAcc);
-        if (!hydrated) return;
-        setMyAcc(hydrated);
-        setUserName(hydrated.name || nextAcc.name);
-        setAvatar(isImageAvatar(hydrated.avatar) ? hydrated.avatar : "");
-      });
-    } else {
-      router.push("/");
     }
+
+    let cancelled = false;
+    fetchServerAccount({
+      email: looksLikeEmail ? sessionId : seed.email,
+      wallet: looksLikeEmail ? seed.wallet : sessionId,
+    }).then((serverAcc) => {
+      if (cancelled) return;
+      if (!serverAcc) {
+        if (!acc) router.push("/");
+        return;
+      }
+      const hydrated = mergeServerAccount(serverAcc, seed);
+      if (!hydrated) {
+        if (!acc) router.push("/");
+        return;
+      }
+      applyAccount(hydrated);
+      if (!acc) {
+        const historyKey = `dspaces_history_${sessionId}`;
+        const savedHistory = JSON.parse(localStorage.getItem(historyKey) || "[]");
+        setHistory(savedHistory);
+      }
+    });
+    return () => { cancelled = true; };
   }, [router]);
 
   useEffect(() => {
@@ -157,7 +179,8 @@ export default function ProfilePage() {
       });
       const data = await readJsonSafe(res);
       if (!res.ok || !data.success) {
-        showToast(data.error || "This email is already connected to another account.");
+        const apiError = typeof data.error === "string" ? data.error.trim() : "";
+        showToast(apiError || "This email is already connected to another account.");
         return;
       }
       setLinkOtpSent(true);
@@ -178,12 +201,17 @@ export default function ProfilePage() {
       });
       const data = await readJsonSafe(res);
       if (data.success) {
-        const verifiedEmail = normalizeEmail(data.email);
-        const hydrated = mergeServerAccount(data.account || { ...myAcc, email: verifiedEmail }, { ...myAcc, email: verifiedEmail });
+        const verifiedEmail = normalizeEmail(data.email || data.account?.email);
+        const hydrated = mergeServerAccount(
+          data.account || { ...myAcc, email: verifiedEmail, wallet: data.wallet || myAcc.wallet },
+          { ...myAcc, email: verifiedEmail, wallet: data.wallet || data.account?.wallet || myAcc.wallet }
+        );
         setMyAcc(hydrated || { ...myAcc, email: verifiedEmail });
         setLinkingEmail(false);
         showToast("Email successfully linked!");
-      } else { showToast(data.error || "Invalid OTP."); }
+      } else {
+        showToast((typeof data.error === "string" && data.error.trim()) || "Invalid OTP.");
+      }
     } catch (err) { showToast("Verification error."); } 
     finally { setLoading(false); }
   };

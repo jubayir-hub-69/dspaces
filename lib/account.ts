@@ -105,6 +105,7 @@ export async function checkEmailAvailable(email: string, current?: any): Promise
         type: "email",
         value: normalized,
         currentEmail: current?.email || null,
+        currentWallet: current?.wallet || null,
       }),
     });
     const data = await res.json();
@@ -133,6 +134,7 @@ export async function checkWalletAvailable(wallet: string, current?: any): Promi
         action: "CHECK",
         type: "wallet",
         value: wallet,
+        currentEmail: current?.email || null,
         currentWallet: current?.wallet || null,
       }),
     });
@@ -189,8 +191,8 @@ export function mergeServerAccount(serverAcc: any, fallback?: any) {
   const merged = {
     ...(fallback || {}),
     ...(serverAcc || {}),
-    email: serverAcc?.email ?? fallback?.email ?? null,
-    wallet: serverAcc?.wallet ?? fallback?.wallet ?? null,
+    email: serverAcc?.email || fallback?.email || null,
+    wallet: serverAcc?.wallet || fallback?.wallet || null,
     name: serverAcc?.name || fallback?.name || (serverAcc?.email ? String(serverAcc.email).split("@")[0] : ""),
     avatar: serverAcc?.avatar || fallback?.avatar || "",
   };
@@ -218,8 +220,10 @@ export function mergeServerAccount(serverAcc: any, fallback?: any) {
 }
 
 export async function fetchServerAccount(opts: { email?: string | null; wallet?: string | null }) {
-  const type = opts.email ? "email" : "wallet";
-  const value = opts.email || opts.wallet;
+  const email = opts.email || null;
+  const wallet = opts.wallet || null;
+  const type = email ? "email" : "wallet";
+  const value = email || wallet;
   if (!value) return null;
   try {
     const res = await fetch("/api/global-db", {
@@ -229,12 +233,18 @@ export async function fetchServerAccount(opts: { email?: string | null; wallet?:
         action: "GET_ACCOUNT",
         type,
         value,
-        currentEmail: opts.email || null,
-        currentWallet: opts.wallet || null,
+        currentEmail: email,
+        currentWallet: wallet,
       }),
     });
     const data = await res.json();
-    return data.account || null;
+    const account = data.account || null;
+    if (!account) return null;
+    return {
+      ...account,
+      email: account.email ?? email ?? null,
+      wallet: account.wallet ?? wallet ?? null,
+    };
   } catch {
     return null;
   }

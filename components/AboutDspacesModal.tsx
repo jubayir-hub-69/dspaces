@@ -228,7 +228,7 @@ export function AboutDspacesModal({ open, onClose, isDark = true }: AboutDspaces
                 </span>
               </a>
               <a
-                href="https://x.com/dspacesapp"
+                href="https://x.com/alr80171"
                 target="_blank"
                 rel="noopener noreferrer"
                 className={`group flex items-center gap-3 rounded-2xl border px-3.5 py-3 transition-all hover:shadow-lg hover:shadow-white/10 ${isDark ? "bg-black/40 border-white/10 hover:border-white/30" : "bg-gray-50 border-gray-200 hover:border-gray-400"}`}

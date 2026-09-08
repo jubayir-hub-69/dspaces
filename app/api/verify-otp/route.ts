@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { cookies } from 'next/headers';
-import { claimIdentity, findAccountRecord, takenError, upsertAccountRecord } from '../../../lib/identity-store';
+import { claimIdentity, findAccountRecord, matchesAccount, takenError, upsertAccountRecord } from '../../../lib/identity-store';
 
 export async function POST(req: Request) {
   try {
@@ -21,27 +21,58 @@ export async function POST(req: Request) {
 
     if (hash === validHash) {
       if (purpose === "link") {
-        const claimed = await claimIdentity("email", email, body.currentEmail || null);
-        if (!claimed.ok) {
-          return NextResponse.json(
-            { error: claimed.error || takenError("email") },
-            { status: 400 }
-          );
+        const existing = await findAccountRecord({ email });
+        const sameAccount = !!(
+          existing &&
+          matchesAccount(existing, body.currentEmail || null, body.currentWallet || null)
+        );
+        if (!sameAccount) {
+          const claimed = await claimIdentity("email", email, body.currentEmail || null);
+          if (!claimed.ok) {
+            return NextResponse.json(
+              { error: claimed.error || takenError("email") },
+              { status: 400 }
+            );
+          }
         }
         const account = await upsertAccountRecord({
           email,
           wallet: body.currentWallet || null,
         });
-        const res = NextResponse.json({ success: true, email, account });
+        const fullAccount = account
+          ? {
+              email: account.email || email,
+              wallet: account.wallet || body.currentWallet || null,
+              primary_auth: account.primary_auth,
+              name: account.name,
+              avatar: account.avatar || "",
+            }
+          : { email, wallet: body.currentWallet || null };
+        const res = NextResponse.json({ success: true, email: fullAccount.email, wallet: fullAccount.wallet, account: fullAccount });
         res.cookies.delete('otp_hash');
         res.cookies.delete('otp_email');
         return res;
       }
 
+      await claimIdentity("email", email, email);
       const account =
         (await findAccountRecord({ email })) ||
         (await upsertAccountRecord({ email, primary_auth: "email", name: email.split("@")[0] }));
-      const res = NextResponse.json({ success: true, email, account });
+      const fullAccount = account
+        ? {
+            email: account.email || email,
+            wallet: account.wallet || null,
+            primary_auth: account.primary_auth || "email",
+            name: account.name,
+            avatar: account.avatar || "",
+          }
+        : { email, wallet: null, primary_auth: "email" as const, name: email.split("@")[0], avatar: "" };
+      const res = NextResponse.json({
+        success: true,
+        email: fullAccount.email,
+        wallet: fullAccount.wallet,
+        account: fullAccount,
+      });
       res.cookies.delete('otp_hash');
       res.cookies.delete('otp_email');
       return res;

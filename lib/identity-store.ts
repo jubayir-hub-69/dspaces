@@ -61,13 +61,26 @@ export function isKvConfigured() {
   return !!kvConfig();
 }
 
+async function accountOwnsIdentity(type: IdentityType, normalized: string, skip: string) {
+  const account = await findAccountRecord(
+    type === "email" ? { email: normalized } : { wallet: normalized }
+  );
+  if (!account) return false;
+  if (type === "email") {
+    const accountEmail = account.email ? normalizeIdentity("email", account.email) : "";
+    return !skip || accountEmail !== skip;
+  }
+  return !skip || account.wallet !== skip;
+}
+
 export async function isIdentityUsed(type: IdentityType, value: string, except?: string | null) {
   const normalized = normalizeIdentity(type, value);
   if (!normalized) return false;
   const skip = except ? normalizeIdentity(type, except) : "";
   if (skip && normalized === skip) return false;
   const list = await readList(type);
-  return list.some((item) => normalizeIdentity(type, item) === normalized);
+  if (list.some((item) => normalizeIdentity(type, item) === normalized)) return true;
+  return accountOwnsIdentity(type, normalized, skip);
 }
 
 export async function claimIdentity(
@@ -84,11 +97,12 @@ export async function claimIdentity(
   }
   const list = await readList(type);
   const skip = except ? normalizeIdentity(type, except) : "";
-  const taken = list.some((item) => {
+  const takenInList = list.some((item) => {
     const itemNorm = normalizeIdentity(type, item);
     return itemNorm === normalized && itemNorm !== skip;
   });
-  if (taken) {
+  const takenInAccounts = await accountOwnsIdentity(type, normalized, skip);
+  if (takenInList || takenInAccounts) {
     return { ok: false, error: takenError(type), dbConnected: true };
   }
   if (!list.some((item) => normalizeIdentity(type, item) === normalized)) {
@@ -142,7 +156,7 @@ async function writeAccounts(accounts: AccountRecord[]) {
   });
 }
 
-function matchesAccount(account: AccountRecord, email?: string | null, wallet?: string | null) {
+export function matchesAccount(account: AccountRecord, email?: string | null, wallet?: string | null) {
   const emailNorm = email ? normalizeIdentity("email", email) : "";
   const walletNorm = wallet ? normalizeIdentity("wallet", wallet) : "";
   if (emailNorm && account.email && normalizeIdentity("email", account.email) === emailNorm) return true;
@@ -150,10 +164,23 @@ function matchesAccount(account: AccountRecord, email?: string | null, wallet?: 
   return false;
 }
 
+function serializeAccount(account: AccountRecord): AccountRecord {
+  return {
+    email: account.email || null,
+    wallet: account.wallet || null,
+    primary_auth: account.primary_auth,
+    name: account.name,
+    avatar: account.avatar || "",
+  };
+}
+
 export async function findAccountRecord(opts: { email?: string | null; wallet?: string | null }) {
   if (!isKvConfigured()) return null;
   const accounts = await readAccounts();
-  return accounts.find((account) => matchesAccount(account, opts.email, opts.wallet)) || null;
+  const matches = accounts.filter((account) => matchesAccount(account, opts.email, opts.wallet));
+  if (!matches.length) return null;
+  const complete = matches.find((account) => account.email && account.wallet) || matches[0];
+  return serializeAccount(complete);
 }
 
 export async function upsertAccountRecord(patch: {
@@ -181,7 +208,7 @@ export async function upsertAccountRecord(patch: {
     };
     accounts[idx] = next;
     await writeAccounts(accounts);
-    return next;
+    return serializeAccount(next);
   }
 
   const created: AccountRecord = {
@@ -193,5 +220,5 @@ export async function upsertAccountRecord(patch: {
   };
   accounts.push(created);
   await writeAccounts(accounts);
-  return created;
+  return serializeAccount(created);
 }
