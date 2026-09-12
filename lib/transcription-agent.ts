@@ -1,0 +1,244 @@
+import { EventEmitter } from "events";
+import { VoiceAgent } from "@dtelecom/agents-js";
+import { Room, RemoteAudioTrack } from "@dtelecom/server-sdk-node";
+import { geminiTranscribeAudio, pcm16ToWav } from "./gemini";
+import { AGENT_IDENTITY, createAccessToken, getDtelecomCredentials, getRoomService, TRANSCRIPT_TOPIC } from "./dtelecom";
+import { appendTranscript, getRoomState, updateRoomState } from "./room-store";
+import type { TranscriptSegment } from "./types";
+
+const SAMPLE_RATE = 16000;
+const FLUSH_BYTES = SAMPLE_RATE * 2 * 3;
+
+type AgentHandle = {
+  stop: () => Promise<void>;
+};
+
+async function publishTranscript(roomName: string, serverUrl: string | undefined, segment: TranscriptSegment) {
+  await appendTranscript(roomName, segment);
+  const payload = new TextEncoder().encode(JSON.stringify({ type: "transcript", ...segment }));
+  try {
+    const svc = await getRoomService(serverUrl);
+    await svc.sendData(roomName, payload, 0, { topic: TRANSCRIPT_TOPIC });
+  } catch {
+    // KV already holds the transcript if the data broadcast misses a node.
+  }
+}
+
+class GeminiSTTStream extends EventEmitter {
+  private buffer = Buffer.alloc(0);
+  private closed = false;
+  private flushing: Promise<void> = Promise.resolve();
+
+  constructor(
+    private readonly apiKey: string,
+    private readonly language?: string
+  ) {
+    super();
+  }
+
+  sendAudio(pcm16: Buffer): void {
+    if (this.closed || !pcm16.length) return;
+    this.buffer = Buffer.concat([this.buffer, pcm16]);
+    if (this.buffer.length >= FLUSH_BYTES) {
+      this.flushing = this.flushing.then(() => this.flush());
+    }
+  }
+
+  private async flush(): Promise<void> {
+    if (this.closed || this.buffer.length < SAMPLE_RATE) return;
+    const chunk = this.buffer;
+    this.buffer = Buffer.alloc(0);
+    try {
+      const text = (await geminiTranscribeAudio(this.apiKey, pcm16ToWav(chunk, SAMPLE_RATE), this.language)).trim();
+      if (!text || this.closed) return;
+      this.emit("transcription", { text, isFinal: true });
+    } catch (error) {
+      this.emit("error", error instanceof Error ? error : new Error("STT failed"));
+    }
+  }
+
+  async close(): Promise<void> {
+    this.closed = true;
+    await this.flushing;
+    await this.flush();
+  }
+}
+
+class GeminiSTT {
+  constructor(
+    private readonly apiKey: string,
+    private readonly language?: string
+  ) {}
+
+  createStream() {
+    return new GeminiSTTStream(this.apiKey, this.language);
+  }
+}
+
+class SilentLLM {
+  async *chat(): AsyncGenerator<{ type: "done" }> {
+    yield { type: "done" };
+  }
+}
+
+async function startVoiceAgent(options: {
+  roomName: string;
+  language?: string;
+  signal: AbortSignal;
+  geminiKey: string;
+}): Promise<AgentHandle> {
+  const { apiKey, apiSecret } = getDtelecomCredentials();
+  const agent = new VoiceAgent({
+    stt: new GeminiSTT(options.geminiKey, options.language),
+    llm: new SilentLLM(),
+    instructions: "You are a silent meeting transcription agent. Transcribe all speakers. Do not reply.",
+    respondMode: "addressed",
+    agentName: "dspaces-transcriber",
+  });
+
+  agent.on("transcription", (result: { text?: string; isFinal?: boolean; speaker?: string }) => {
+    const text = result.text?.trim();
+    if (!text || result.isFinal === false) return;
+    void publishTranscript(options.roomName, undefined, {
+      speaker: result.speaker || "Participant",
+      text,
+      at: Date.now(),
+      isFinal: true,
+    });
+  });
+
+  await agent.start({
+    room: options.roomName,
+    identity: AGENT_IDENTITY,
+    name: "dSpaces AI Agent",
+    apiKey,
+    apiSecret,
+  });
+
+  const stop = async () => {
+    await agent.stop();
+    const state = await getRoomState(options.roomName);
+    if (state) {
+      await updateRoomState(options.roomName, (current) => ({ ...current, agentActive: false }));
+    }
+  };
+
+  options.signal.addEventListener("abort", () => {
+    void stop();
+  });
+
+  return { stop };
+}
+
+async function startRoomAgent(options: {
+  roomName: string;
+  language?: string;
+  signal: AbortSignal;
+  geminiKey: string;
+}): Promise<AgentHandle> {
+  const at = await createAccessToken({
+    identity: AGENT_IDENTITY,
+    name: "dSpaces AI Agent",
+    metadata: JSON.stringify({ role: "guest", isCoHost: false, agent: true }),
+    room: options.roomName,
+    canPublish: false,
+    canPublishData: true,
+    hidden: false,
+  });
+  const token = at.toJwt();
+  const wsUrl = await at.getWsUrl();
+  if (!wsUrl) {
+    throw new Error("dTelecom could not assign a video node for the AI agent.");
+  }
+
+  const room = new Room();
+  const buffers = new Map<string, Buffer>();
+  let stopped = false;
+
+  const flushSpeaker = async (speaker: string, force = false) => {
+    const buf = buffers.get(speaker);
+    if (!buf) return;
+    if (!force && buf.length < FLUSH_BYTES) return;
+    buffers.set(speaker, Buffer.alloc(0));
+    try {
+      const text = (await geminiTranscribeAudio(options.geminiKey, pcm16ToWav(buf, SAMPLE_RATE), options.language)).trim();
+      if (!text || stopped) return;
+      await publishTranscript(options.roomName, wsUrl, {
+        speaker,
+        text,
+        at: Date.now(),
+        isFinal: true,
+      });
+    } catch {
+      // Keep the agent alive if a single STT request fails.
+    }
+  };
+
+  room.on("trackSubscribed", (track, _pub, participant) => {
+    if (!(track instanceof RemoteAudioTrack)) return;
+    const identity = participant.identity || participant.name || "Participant";
+    if (identity === AGENT_IDENTITY) return;
+    void (async () => {
+      try {
+        const stream = track.createStream(SAMPLE_RATE, 1);
+        for await (const frame of stream) {
+          if (stopped || options.signal.aborted) break;
+          const chunk = frame.toBuffer();
+          if (!chunk.length) continue;
+          const prev = buffers.get(identity) || Buffer.alloc(0);
+          const next = Buffer.concat([prev, chunk]);
+          buffers.set(identity, next);
+          if (next.length >= FLUSH_BYTES) {
+            await flushSpeaker(identity);
+          }
+        }
+      } catch {
+        // Track ended or agent disconnected.
+      }
+    })();
+  });
+
+  await room.connect(wsUrl, token, { autoSubscribe: true });
+
+  const stop = async () => {
+    if (stopped) return;
+    stopped = true;
+    for (const speaker of buffers.keys()) {
+      await flushSpeaker(speaker, true);
+    }
+    try {
+      await room.disconnect();
+    } catch {
+      // Ignore disconnect races.
+    }
+    const state = await getRoomState(options.roomName);
+    if (state) {
+      await updateRoomState(options.roomName, (current) => ({ ...current, agentActive: false }));
+    }
+  };
+
+  options.signal.addEventListener("abort", () => {
+    void stop();
+  });
+
+  return { stop };
+}
+
+export async function runTranscriptionAgent(options: {
+  roomName: string;
+  language?: string;
+  signal: AbortSignal;
+}): Promise<AgentHandle> {
+  const geminiKey = process.env.GEMINI_API_KEY?.trim();
+  if (!geminiKey) {
+    throw new Error("GEMINI_API_KEY is missing.");
+  }
+
+  await updateRoomState(options.roomName, (current) => ({ ...current, agentActive: true }));
+
+  try {
+    return await startVoiceAgent({ ...options, geminiKey });
+  } catch {
+    return startRoomAgent({ ...options, geminiKey });
+  }
+}

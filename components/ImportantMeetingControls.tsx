@@ -10,6 +10,8 @@ import {
   parseImportantMeta,
   type ImportantRole,
 } from "../lib/important-meetings";
+import { updateStageParticipant } from "../lib/moderation-client";
+import { isHostRole, isManagerRole } from "../lib/types";
 
 const MEETING_TOPIC = "dspaces-important-meeting";
 
@@ -52,11 +54,13 @@ export function ImportantMeetingControls({
   isHost,
   roomId,
   serverUrl,
+  token,
   showDynamicToast,
 }: {
   isHost: boolean;
   roomId: string;
   serverUrl: string;
+  token: string;
   showDynamicToast: (msg: string) => void;
 }) {
   const room = useRoomContext();
@@ -75,9 +79,9 @@ export function ImportantMeetingControls({
   toastRef.current = showDynamicToast;
 
   const localMeta = parseImportantMeta(room?.localParticipant?.metadata);
-  const isSupremeHost = isHost || localMeta.role === "supreme_host";
+  const isSupremeHost = isHost || isHostRole(localMeta.role);
   const isCoHostUser = !isSupremeHost && (localMeta.isCoHost || localMeta.role === "cohost");
-  const isManager = isSupremeHost || isCoHostUser;
+  const isManager = isSupremeHost || isCoHostUser || isManagerRole(localMeta.role);
 
   const snapshotPeople = useCallback(() => {
     if (!room) return;
@@ -231,35 +235,26 @@ export function ImportantMeetingControls({
     async (identity: string, action: "allow" | "demote" | "make-cohost", successMsg: string) => {
       setBusyIdentity(`${action}:${identity}`);
       try {
-        const res = await fetch("/api/update-participant", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            room: roomId,
-            identity,
-            serverUrl,
-            action,
-            actorIdentity: room?.localParticipant?.identity,
-          }),
+        await updateStageParticipant({
+          room: roomId,
+          identity,
+          token,
+          serverUrl,
+          action,
         });
-        const data = await res.json();
-        if (data.success) {
-          if (action === "allow" || action === "demote") {
-            setRaisedHands((prev) => prev.filter((hand) => hand.identity !== identity));
-            sendMessage({ type: "HAND_RESOLVED", identity });
-          }
-          showDynamicToast(successMsg);
-          snapshotPeople();
-        } else {
-          showDynamicToast(data.error || "Failed to update participant.");
+        if (action === "allow" || action === "demote") {
+          setRaisedHands((prev) => prev.filter((hand) => hand.identity !== identity));
+          sendMessage({ type: "HAND_RESOLVED", identity });
         }
-      } catch {
-        showDynamicToast("Failed to update participant.");
+        showDynamicToast(successMsg);
+        snapshotPeople();
+      } catch (error: unknown) {
+        showDynamicToast(error instanceof Error ? error.message : "Failed to update participant.");
       } finally {
         setBusyIdentity(null);
       }
     },
-    [roomId, serverUrl, room, showDynamicToast, sendMessage, snapshotPeople]
+    [roomId, serverUrl, token, showDynamicToast, sendMessage, snapshotPeople]
   );
 
   const denyHand = useCallback(

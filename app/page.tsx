@@ -303,22 +303,44 @@ export default function Home() {
     if (connected) disconnect();
   };
 
-  const handleCreateRoom = () => {
-    if (!userName.trim()) return showToast("Please enter your Display Name first.");
-    let db = getDb();
+  const persistDisplayName = () => {
+    const db = getDb();
     const updatedDb = db.map((a: any) => (a.email === myAcc.email && a.wallet === myAcc.wallet) ? { ...a, name: userName.trim() } : a);
     saveDb(updatedDb);
+  };
+
+  const createAndEnterRoom = async (mode: "standard" | "important") => {
+    if (!userName.trim()) return showToast("Please enter your Display Name first.");
+    persistDisplayName();
     const randomCode = Math.floor(1000 + Math.random() * 9000);
-    router.push(`/room?id=dSpaces-${randomCode}&name=${userName.trim()}&ishost=true`);
+    const room = `dSpaces-${randomCode}`;
+    setLoading(true);
+    try {
+      const res = await fetch("/api/create-room", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ room, identity: userName.trim(), mode }),
+      });
+      const data = await readJsonSafe(res);
+      if (!res.ok || data.error) {
+        showToast(data.error || "Could not create the room.");
+        return;
+      }
+      const modeQuery = mode === "important" ? "&mode=important" : "";
+      router.push(`/room?id=${room}&name=${encodeURIComponent(userName.trim())}${modeQuery}`);
+    } catch {
+      showToast("Could not create the room.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCreateRoom = () => {
+    void createAndEnterRoom("standard");
   };
 
   const handleCreateImportantMeeting = () => {
-    if (!userName.trim()) return showToast("Please enter your Display Name first.");
-    let db = getDb();
-    const updatedDb = db.map((a: any) => (a.email === myAcc.email && a.wallet === myAcc.wallet) ? { ...a, name: userName.trim() } : a);
-    saveDb(updatedDb);
-    const randomCode = Math.floor(1000 + Math.random() * 9000);
-    router.push(`/room?id=dSpaces-${randomCode}&name=${userName.trim()}&ishost=true&mode=important`);
+    void createAndEnterRoom("important");
   };
 
   const handleJoinRoom = () => {
@@ -344,7 +366,7 @@ export default function Home() {
     const isValidFormat = /^dSpaces-\d{4}$/.test(finalId);
     if (!isValidFormat) return showToast("Invalid Room ID! Please enter a valid code (e.g., dSpaces-1234).");
     const modeQuery = extractedMode === "important" ? "&mode=important" : "";
-    router.push(`/room?id=${finalId}&name=${userName.trim()}${modeQuery}`);
+    router.push(`/room?id=${encodeURIComponent(finalId)}&name=${encodeURIComponent(userName.trim())}${modeQuery}`);
   };
 
   const displayAccountInfo = formatPrimaryIdentity(myAcc);

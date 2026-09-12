@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import type { ReceivedChatMessage } from "@dtelecom/components-react";
 import { useRoomContext } from "@dtelecom/components-react";
+import { parseParticipantMeta } from "../lib/types";
 
 type IdentifiedChatEntryProps = {
   entry?: ReceivedChatMessage;
@@ -12,16 +13,14 @@ type IdentifiedChatEntryProps = {
 const cleanParticipantName = (value: string) =>
   value.replace(/\s*\(You\)\s*$/i, "").replace(/\s*\(Host\)\s*$/i, "").trim();
 
-function lookupAvatar(displayName: string) {
+function lookupAvatar(displayName: string, metadata?: string) {
+  const fromMeta = parseParticipantMeta(metadata).avatar;
+  if (fromMeta) return fromMeta;
   const clean = cleanParticipantName(displayName);
   try {
-    const cached = (window as unknown as { __dspacesAvatars?: Record<string, string> }).__dspacesAvatars || {};
-    if (cached[clean]) return cached[clean];
-    if (cached[displayName]) return cached[displayName];
-
-    const db = JSON.parse(localStorage.getItem("dspaces_db") || "[]");
-    const user = db.find((item: { name?: string; avatar?: string }) => item.name === clean || item.name === displayName);
-    if (user?.avatar) return user.avatar as string;
+    const db = JSON.parse(localStorage.getItem("dspaces_db") || "[]") as Array<{ name?: string; avatar?: string }>;
+    const user = db.find((item) => item.name === clean || item.name === displayName);
+    if (user?.avatar) return user.avatar;
   } catch {
     // localStorage may be unavailable
   }
@@ -60,12 +59,10 @@ export function IdentifiedChatEntry({ entry, messageFormatter }: IdentifiedChatE
     return "Guest";
   }, [participant?.name, participant?.identity, localIdentity, room?.localParticipant]);
 
-  const [avatarTick, setAvatarTick] = useState(0);
-  useEffect(() => {
-    const id = window.setInterval(() => setAvatarTick((value) => value + 1), 4000);
-    return () => window.clearInterval(id);
-  }, []);
-  const avatar = useMemo(() => lookupAvatar(displayName), [displayName, avatarTick]);
+  const avatar = useMemo(
+    () => lookupAvatar(displayName, participant?.metadata),
+    [displayName, participant?.metadata]
+  );
   const isLocal = participant?.identity === localIdentity;
   const formattedMessage = messageFormatter && entry?.message ? messageFormatter(entry.message) : entry?.message;
   const time = entry?.timestamp ? new Date(entry.timestamp) : null;

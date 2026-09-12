@@ -13,26 +13,16 @@ import "./room-layout.css";
 import { AboutDspacesButton, AboutDspacesModal } from "../../components/AboutDspacesModal";
 import { ImportantMeetingControls } from "../../components/ImportantMeetingControls";
 import { ImportantMeetingStage } from "../../components/ImportantMeetingStage";
-import { RoomVideoConference } from "../../components/RoomVideoConference";
+import { HostModeration } from "../../components/HostModeration";
+import { ParticipantAvatarSync, TranscriptListener } from "../../components/RoomAgents";
 import { upsertMeetingHistory } from "../../lib/meeting-history";
-import { initialFromAccount, initialsAvatarHtml, isImageAvatar } from "../../lib/account";
+import { isImageAvatar } from "../../lib/account";
+import { isHostRole, type TranscriptSegment } from "../../lib/types";
 
 interface ChatMessage {
   sender: "user" | "ai";
   text: string;
 }
-
-const isLikelyMobileDevice = () => {
-  if (typeof navigator === "undefined") return false;
-  const ua = navigator.userAgent || "";
-  return /Mobi|Android|iPhone|iPod|iPad|webOS|IEMobile|Opera Mini/i.test(ua)
-    || (navigator.maxTouchPoints > 1 && /Macintosh/.test(ua));
-};
-
-const getSpeechRecognitionCtor = () => {
-  if (typeof window === "undefined") return null;
-  return (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition || null;
-};
 
 const LIVEKIT_ROOM_STYLE: CSSProperties = {
   height: "100%",
@@ -276,114 +266,56 @@ const ScreenShareGuard = memo(function ScreenShareGuard({ showDynamicToast }: { 
   return null;
 });
 
-const AudioAndHostControls = memo(function AudioAndHostControls({ rawUserName, showDynamicToast, isImportant, isSupremeHost }: { rawUserName: string, showDynamicToast: (msg: string) => void, isImportant?: boolean, isSupremeHost?: boolean }) {
+const KickedListener = memo(function KickedListener({ showDynamicToast }: { showDynamicToast: (msg: string) => void }) {
   const room = useRoomContext();
-  const [aiNoise, setAiNoise] = useState(true);
-  const lastSignalTime = useRef(0);
   const toastRef = useRef(showDynamicToast);
   toastRef.current = showDynamicToast;
-  const aiNoiseRef = useRef(aiNoise);
-  aiNoiseRef.current = aiNoise;
-
-  useEffect(() => {
-    (window as any).sendHostAction = async (action: string, target: string) => {
-      try {
-        await fetch('/api/room-signals', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action, target })
-        });
-        
-        if (action === 'MUTE_USER') toastRef.current(`🎙️ Muted ${target}`);
-        if (action === 'KICK_USER') toastRef.current(`🚪 Removed ${target} from room`);
-      } catch(e) {}
-    };
-    return () => { delete (window as any).sendHostAction; };
-  }, []);
 
   useEffect(() => {
     if (!room) return;
-    const myName = rawUserName.replace(' (Host)', '').replace(' (You)', '').trim();
-
-    const checkSignals = async () => {
-      try {
-        const res = await fetch('/api/room-signals');
-        const data = await res.json();
-        
-        if (data.success && data.signals) {
-          data.signals.forEach((sig: any) => {
-            if (sig.target === myName && sig.timestamp > lastSignalTime.current) {
-              lastSignalTime.current = sig.timestamp;
-
-              if (isImportant && isSupremeHost && (sig.action === "MUTE_USER" || sig.action === "KICK_USER")) {
-                return;
-              }
-              
-              if (sig.action === "MUTE_USER") {
-                if (room.localParticipant) {
-                  room.localParticipant.setMicrophoneEnabled(false);
-                }
-                toastRef.current("🎙️ The Host has muted your microphone.");
-              }
-              if (sig.action === "KICK_USER") {
-                toastRef.current("🛑 The Host has removed you from the room.");
-                room.disconnect(); 
-              }
-            }
-          });
-        }
-      } catch(e) {}
+    const onDisconnected = (reason?: unknown) => {
+      const code = typeof reason === "number" ? reason : undefined;
+      if (code === 4) {
+        toastRef.current("The host removed you from the room.");
+      }
     };
+    room.on("disconnected", onDisconnected);
+    return () => {
+      room.off("disconnected", onDisconnected);
+    };
+  }, [room]);
 
-    const interval = setInterval(checkSignals, 2000);
-    return () => clearInterval(interval);
-  }, [room, rawUserName, isImportant, isSupremeHost]);
-
-  const toggleNoiseSuppression = useCallback(() => {
-    const next = !aiNoiseRef.current;
-    setAiNoise(next);
-    toastRef.current(`🎙️ AI Noise Suppression is now ${next ? 'Activated' : 'Deactivated'}`);
-  }, []);
-
-  return (
-    <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-50 flex items-center gap-3">
-      <button 
-        onClick={toggleNoiseSuppression} 
-        className={`px-4 py-2.5 rounded-xl text-xs font-extrabold border transition-all flex items-center gap-2 shadow-[0_0_15px_rgba(0,0,0,0.5)] ${aiNoise ? 'bg-black/60 border-[#00ff88]/50 text-[#00ff88] backdrop-blur-md' : 'bg-black/40 border-gray-600 text-gray-400 backdrop-blur-md'}`}
-      >
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path></svg>
-        AI Noise {aiNoise ? 'ON' : 'OFF'}
-      </button>
-    </div>
-  );
+  return null;
 });
 
 type RoomCallStageProps = {
   token: string;
   serverUrl: string;
-  rawUserName: string;
   onConnected: () => void;
   onDisconnected: () => void;
   showDynamicToast: (msg: string) => void;
   setMaxParticipants: (n: any) => void;
   isImportant?: boolean;
   isHost?: boolean;
+  isAdmin?: boolean;
   roomId?: string;
-  joinRole?: string;
+  avatars?: Record<string, string>;
+  onTranscript?: (segment: TranscriptSegment, fullText: string) => void;
 };
 
 const RoomCallStage = memo(function RoomCallStage({
   token,
   serverUrl,
-  rawUserName,
   onConnected,
   onDisconnected,
   showDynamicToast,
   setMaxParticipants,
   isImportant = false,
   isHost = false,
+  isAdmin = false,
   roomId = "",
-  joinRole = "",
+  avatars = {},
+  onTranscript,
 }: RoomCallStageProps) {
   const publishOnJoin = !isImportant || isHost;
   return (
@@ -406,19 +338,29 @@ const RoomCallStage = memo(function RoomCallStage({
             isHost={isHost}
             roomId={roomId}
             serverUrl={serverUrl}
+            token={token}
             showDynamicToast={showDynamicToast}
           />
         ) : (
-          <RoomVideoConference />
+          <HostModeration
+            token={token}
+            roomId={roomId}
+            serverUrl={serverUrl}
+            isAdmin={isAdmin}
+            showDynamicToast={showDynamicToast}
+          />
         )}
         <RoomAudioRenderer />
         <ScreenShareGuard showDynamicToast={showDynamicToast} />
-        <AudioAndHostControls rawUserName={rawUserName} showDynamicToast={showDynamicToast} isImportant={isImportant} isSupremeHost={isHost} />
+        <KickedListener showDynamicToast={showDynamicToast} />
+        <ParticipantAvatarSync fallbackAvatars={avatars} />
+        {onTranscript && <TranscriptListener onSegment={onTranscript} />}
         {isImportant && (
           <ImportantMeetingControls
             isHost={isHost}
             roomId={roomId}
             serverUrl={serverUrl}
+            token={token}
             showDynamicToast={showDynamicToast}
           />
         )}
@@ -433,7 +375,6 @@ function RoomContent() {
   
   const roomId = searchParams.get("id") || "dSpaces-Room";
   const rawUserName = searchParams.get("name");
-  const isHost = searchParams.get("ishost") === "true";
   const urlImportant = searchParams.get("mode") === "important";
 
   useEffect(() => {
@@ -443,32 +384,26 @@ function RoomContent() {
     }
   }, [rawUserName, roomId, router, urlImportant]);
 
-  const userName = useMemo(
-    () => (isHost ? `${rawUserName || 'Guest'} (Host)` : (rawUserName || 'Guest')),
-    [isHost, rawUserName]
-  );
+  const userName = useMemo(() => rawUserName || "Guest", [rawUserName]);
 
   const [token, setToken] = useState("");
   const [serverUrl, setServerUrl] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
   const [detectedImportant, setDetectedImportant] = useState(false);
   const [joinRole, setJoinRole] = useState("");
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [avatarMap, setAvatarMap] = useState<Record<string, string>>({});
   const isImportant = urlImportant || detectedImportant;
+  const isHost = isHostRole(joinRole) || isAdmin;
 
   const [isRecording, setIsRecording] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [summary, setSummary] = useState("");
   const [loadingAI, setLoadingAI] = useState(false);
   
-  const recognitionRef = useRef<any>(null);
   const isRecordingRef = useRef(false);
   const fullTranscriptRef = useRef("");
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const micStreamRef = useRef<MediaStream | null>(null);
-  const micAudioNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
-  const bootSpeechRecognitionRef = useRef<() => boolean>(() => false);
-  const translatorGenerationRef = useRef(0);
-  const [aiListenPaused, setAiListenPaused] = useState(false);
+  const agentAbortRef = useRef<AbortController | null>(null);
 
   const [showToast, setShowToast] = useState(false);
   const [toastMsg, setToastMsg] = useState("");
@@ -479,7 +414,6 @@ function RoomContent() {
   const aiLanguageRef = useRef(aiLanguage);
   aiLanguageRef.current = aiLanguage;
   const [summaryLanguage, setSummaryLanguage] = useState<"English" | "Bengali" | "Both">("English");
-  const sttLangRef = useRef("");
   const restoredTranscriptRef = useRef("");
   const restoreGenRef = useRef(0);
   const restoreTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -502,11 +436,11 @@ function RoomContent() {
 
     const fetchToken = async () => {
       try {
-        const payload: Record<string, unknown> = { room: roomId, username: userName };
-        if (urlImportant) {
-          payload.mode = "important";
-          payload.isHost = isHost;
-        }
+        const db = JSON.parse(localStorage.getItem("dspaces_db") || "[]") as Array<{ name?: string; avatar?: string }>;
+        const me = db.find((u) => u.name === userName);
+        const avatar = me?.avatar && isImageAvatar(me.avatar) ? me.avatar : "";
+        const payload: Record<string, unknown> = { room: roomId, username: userName, avatar };
+        if (urlImportant) payload.mode = "important";
         const res = await fetch("/api/get-token", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -519,6 +453,7 @@ function RoomContent() {
           setServerUrl(data.url);
           if (data.important) setDetectedImportant(true);
           if (data.role) setJoinRole(data.role);
+          setIsAdmin(data.isAdmin === true);
         } else {
           setErrorMsg(data.error || "Failed to fetch connection token.");
         }
@@ -527,7 +462,7 @@ function RoomContent() {
       }
     };
     fetchToken();
-  }, [roomId, userName, rawUserName, urlImportant, isHost]);
+  }, [roomId, userName, rawUserName, urlImportant]);
 
   useEffect(() => {
     if (chatEndRef.current) {
@@ -535,115 +470,44 @@ function RoomContent() {
     }
   }, [aiChatHistory]);
 
-  // FIX: SLUGGISHNESS RESOLVED - Removed MutationObserver, using pure Interval instead.
   useEffect(() => {
     if (!rawUserName) return;
 
-    const db = JSON.parse(localStorage.getItem('dspaces_db') || '[]');
-    let myCleanName = rawUserName.replace(' (Host)', '').trim();
-    let myAvatar = '';
-    const me = db.find((u: any) => u.name === myCleanName);
-    if (me?.avatar && isImageAvatar(me.avatar)) myAvatar = me.avatar;
+    const db = JSON.parse(localStorage.getItem("dspaces_db") || "[]") as Array<{ name?: string; avatar?: string }>;
+    const myAvatar = db.find((u) => u.name === userName)?.avatar || "";
 
-    const syncAndApplyAvatars = async () => {
+    const syncAvatars = async () => {
       try {
-        const res = await fetch('/api/sync-avatar', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: myCleanName, avatar: myAvatar })
+        const res = await fetch("/api/sync-avatar", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: userName,
+            avatar: isImageAvatar(myAvatar) ? myAvatar : "",
+            room: roomId,
+            serverUrl,
+          }),
         });
         const data = await res.json();
-        const globalUserMap = data.avatars || {};
-        (window as any).__dspacesAvatars = globalUserMap;
-
-        const tiles = document.querySelectorAll('.lk-participant-tile');
-        tiles.forEach((tile: any) => {
-          const nameEl = tile.querySelector('.lk-participant-name');
-          const placeholder = tile.querySelector('.lk-participant-placeholder');
-          
-          if (nameEl && placeholder) {
-            const currentRawName = nameEl.textContent || '';
-            const tileName = currentRawName.replace(' (Host)', '').replace(' (You)', '').trim();
-            
-            const mapped = globalUserMap[tileName] || (db.find((u:any)=>u.name===tileName)?.avatar) || '';
-            const avatar = isImageAvatar(mapped) ? mapped : `initial:${initialFromAccount(tileName)}`;
-            if (!placeholder.querySelector('.custom-avatar') || placeholder.getAttribute('data-avatar') !== avatar) {
-              placeholder.innerHTML = ''; 
-              placeholder.setAttribute('data-avatar', avatar);
-              
-              if (isImageAvatar(mapped)) {
-                placeholder.innerHTML = `<img src="${mapped}" class="custom-avatar" style="width: 120px; height: 120px; border-radius: 50%; object-fit: cover; border: 3px solid #00e5ff; box-shadow: 0 0 25px rgba(0,229,255,0.4);" />`;
-              } else {
-                placeholder.innerHTML = initialsAvatarHtml(tileName, 120);
-              }
-            }
-
-            if (isHost && !isImportant && tileName !== myCleanName) {
-              tile.style.position = 'relative';
-              if (!tile.querySelector('.host-control-btn')) {
-                const btnContainer = document.createElement('div');
-                btnContainer.className = 'host-control-btn absolute top-3 right-3 z-50';
-                btnContainer.setAttribute('onmouseleave', "this.querySelector('.host-dropdown').classList.add('hidden')");
-
-                btnContainer.innerHTML = `
-                  <button class="bg-black/80 p-2 rounded-lg border border-gray-600 hover:bg-gray-700 text-white transition-all backdrop-blur-md shadow-lg pointer-events-auto" onclick="this.nextElementSibling.classList.toggle('hidden')">
-                    <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 16 16"><path d="M3 8a1.5 1.5 0 113 0 1.5 1.5 0 01-3 0zm5 0a1.5 1.5 0 113 0 1.5 1.5 0 01-3 0zm5 0a1.5 1.5 0 113 0 1.5 1.5 0 01-3 0z"></path></svg>
-                  </button>
-                  <div class="host-dropdown hidden absolute right-0 mt-2 w-36 bg-[#0f172a]/95 backdrop-blur-xl border border-gray-700 rounded-xl shadow-[0_15px_30px_rgba(0,0,0,0.9)] overflow-hidden flex flex-col z-[9999] pointer-events-auto">
-                    <button class="px-4 py-3 text-xs text-left font-bold text-gray-200 hover:bg-gray-800 hover:text-[#00e5ff] flex items-center gap-2 transition-colors w-full" onclick="if(window.sendHostAction) window.sendHostAction('MUTE_USER', '${tileName}'); this.parentElement.classList.add('hidden')">
-                      🔇 Mute
-                    </button>
-                    <div class="h-[1px] w-full bg-gray-800/50"></div>
-                    <button class="px-4 py-3 text-xs text-left font-bold text-red-400 hover:bg-red-500/20 hover:text-red-300 flex items-center gap-2 transition-colors w-full" onclick="if(window.sendHostAction) window.sendHostAction('KICK_USER', '${tileName}'); this.parentElement.classList.add('hidden')">
-                      🚪 Kick out
-                    </button>
-                  </div>
-                `;
-                tile.appendChild(btnContainer);
-              }
-            }
-          }
-        });
-      } catch(e) {}
-    };
-
-    // Safely running this every 4 seconds without any DOM mutation loops
-    const interval = setInterval(syncAndApplyAvatars, 4000); 
-    syncAndApplyAvatars();
-    
-    return () => clearInterval(interval);
-  }, [rawUserName, isHost, isImportant]);
-
-  useEffect(() => {
-    const onVisibility = () => {
-      if (document.hidden || !isRecordingRef.current) return;
-      try {
-        recognitionRef.current?.start();
-        setAiListenPaused(false);
+        if (data.avatars && typeof data.avatars === "object") {
+          setAvatarMap(data.avatars as Record<string, string>);
+        }
       } catch {
-        setAiListenPaused(true);
+        // Avatar sync is best-effort; participant metadata is the live source.
       }
     };
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => document.removeEventListener("visibilitychange", onVisibility);
-  }, []);
+
+    const interval = setInterval(syncAvatars, 8000);
+    void syncAvatars();
+    return () => clearInterval(interval);
+  }, [rawUserName, userName, roomId, serverUrl]);
 
   useEffect(() => {
     return () => {
       isRecordingRef.current = false;
-      translatorGenerationRef.current += 1;
-      try { recognitionRef.current?.abort(); } catch {}
-      recognitionRef.current = null;
-      try { micAudioNodeRef.current?.disconnect(); } catch {}
-      micAudioNodeRef.current = null;
-      micStreamRef.current?.getTracks().forEach((track) => track.stop());
-      micStreamRef.current = null;
+      agentAbortRef.current?.abort();
+      agentAbortRef.current = null;
       if (restoreTimerRef.current) clearTimeout(restoreTimerRef.current);
-      const ctx = audioContextRef.current;
-      audioContextRef.current = null;
-      if (ctx && ctx.state !== "closed") {
-        try { void ctx.close(); } catch {}
-      }
     };
   }, []);
 
@@ -694,93 +558,9 @@ function RoomContent() {
     setTranscript("");
     fullTranscriptRef.current = "";
     restoredTranscriptRef.current = "";
-    sttLangRef.current = "";
     setAiChatHistory([]);
     setSummary("");
     showDynamicToast("Data cleared successfully!");
-  };
-
-  const stopTranslatorMic = () => {
-    try { micAudioNodeRef.current?.disconnect(); } catch {}
-    micAudioNodeRef.current = null;
-    micStreamRef.current?.getTracks().forEach((track) => track.stop());
-    micStreamRef.current = null;
-  };
-
-  const toastMicError = (err: any) => {
-    const name = err?.name || "";
-    if (name === "NotAllowedError" || name === "PermissionDeniedError") {
-      showDynamicToast("Microphone permission denied. Enable the mic in your browser settings to use the AI Translator.");
-    } else if (name === "NotFoundError" || name === "DevicesNotFoundError") {
-      showDynamicToast("No microphone was found on this device.");
-    } else if (name === "NotReadableError" || name === "TrackStartError") {
-      showDynamicToast("This microphone is already in use. Close other apps and try again.");
-    } else if (name === "SecurityError") {
-      showDynamicToast("Microphone access is blocked on this page. Use HTTPS and try again.");
-    } else if (name === "NotSupportedError") {
-      showDynamicToast("Microphone access is not available in this browser.");
-    } else {
-      showDynamicToast("Could not access the microphone on this device.");
-    }
-  };
-
-  const beginTranslatorFromUserGesture = () => {
-    const Ctor = (window.AudioContext || (window as any).webkitAudioContext) as typeof AudioContext | undefined;
-    let resumePromise: Promise<void> = Promise.resolve();
-
-    if (Ctor) {
-      if (!audioContextRef.current || audioContextRef.current.state === "closed") {
-        audioContextRef.current = new Ctor();
-      }
-      const ctx = audioContextRef.current;
-      if (ctx.state === "suspended") {
-        resumePromise = ctx.resume().then(() => undefined).catch(() => undefined);
-      }
-      try {
-        const buffer = ctx.createBuffer(1, 1, ctx.sampleRate);
-        const source = ctx.createBufferSource();
-        source.buffer = buffer;
-        source.connect(ctx.destination);
-        source.start(0);
-      } catch {}
-    }
-
-    const existing = micStreamRef.current;
-    const live = existing?.getAudioTracks().some((track) => track.readyState === "live");
-    let micPromise: Promise<MediaStream>;
-
-    if (!navigator.mediaDevices?.getUserMedia) {
-      micPromise = Promise.reject(Object.assign(new Error("no mediaDevices"), { name: "NotSupportedError" }));
-    } else if (existing && live) {
-      micPromise = Promise.resolve(existing);
-    } else {
-      micPromise = navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true }
-      }).catch((err: any) => {
-        if (err?.name === "OverconstrainedError" || err?.name === "ConstraintNotSatisfiedError") {
-          return navigator.mediaDevices.getUserMedia({ audio: true });
-        }
-        throw err;
-      });
-    }
-
-    return { resumePromise, micPromise };
-  };
-
-  const detectSttLangFromText = (text: string) => {
-    if (/[\u0980-\u09FF]/.test(text)) return "bn-BD";
-    if (/[\u0900-\u097F]/.test(text)) return "hi-IN";
-    return "";
-  };
-
-  const resolveSttLang = () => {
-    const selected = aiLanguageRef.current;
-    if (selected === "Bengali") return "bn-BD";
-    if (selected === "Hindi") return "hi-IN";
-    if (selected === "Spanish") return "es-ES";
-    if (selected === "French") return "fr-FR";
-    if (selected === "English") return "en-US";
-    return sttLangRef.current;
   };
 
   const runNativeScriptRestore = async (raw: string) => {
@@ -798,208 +578,132 @@ function RoomContent() {
       if (data.success && data.text) {
         restoredTranscriptRef.current = data.text;
         setTranscript(data.text);
-        const detected = detectSttLangFromText(data.text);
-        if (detected && aiLanguageRef.current === "Auto" && detected !== sttLangRef.current) {
-          sttLangRef.current = detected;
-          if (isRecordingRef.current) bootSpeechRecognitionRef.current();
-        }
         return data.text;
       }
     } catch {}
     return text;
   };
 
-  const scheduleNativeScriptRestore = (raw: string) => {
-    if (restoreTimerRef.current) clearTimeout(restoreTimerRef.current);
-    restoreTimerRef.current = setTimeout(() => {
-      void runNativeScriptRestore(raw);
-    }, 1600);
-  };
-
-  const bootSpeechRecognition = () => {
-    const SpeechRecognition = getSpeechRecognitionCtor();
-    if (!SpeechRecognition || !isRecordingRef.current) return false;
-
-    const generation = ++translatorGenerationRef.current;
-    try { recognitionRef.current?.abort(); } catch {}
-
-    const recognition = new SpeechRecognition();
-    const mobile = isLikelyMobileDevice();
-    recognition.continuous = !mobile;
-    recognition.interimResults = true;
-    recognition.maxAlternatives = 1;
-    const sttLang = resolveSttLang();
-    try {
-      recognition.lang = sttLang || "";
-    } catch {
-      // Some browsers reject an empty lang; leaving it unset uses UA detection.
-    }
-
-    let currentSessionText = "";
-
-    recognition.onresult = (event: any) => {
-      let text = "";
-      for (let i = 0; i < event.results.length; i++) {
-        text += event.results[i][0].transcript;
-      }
-      currentSessionText = text;
-      const combined = (fullTranscriptRef.current + " " + text).trim();
-      setTranscript(combined);
-      scheduleNativeScriptRestore(combined);
-    };
-
-    let startedAt = Date.now();
-
-    recognition.onend = () => {
-      if (currentSessionText) {
-        fullTranscriptRef.current += " " + currentSessionText;
-        currentSessionText = "";
-      }
-      if (generation !== translatorGenerationRef.current) return;
-      if (!isRecordingRef.current) return;
-
-      if (Date.now() - startedAt < 150) {
-        setAiListenPaused(true);
-        showDynamicToast("Listening paused. Tap Continue to keep transcribing on this device.");
-        return;
-      }
-
-      try {
-        recognition.start();
-        startedAt = Date.now();
-      } catch {
-        const restarted = bootSpeechRecognitionRef.current();
-        if (!restarted) {
-          setAiListenPaused(true);
-          showDynamicToast("Listening paused. Tap Continue to keep transcribing on this device.");
-        }
-      }
-    };
-
-    recognition.onerror = (event: any) => {
-      if (generation !== translatorGenerationRef.current) return;
-      const error = event?.error;
-      if (error === "no-speech" || error === "aborted") return;
-      if (error === "language-not-supported") {
-        try { recognition.lang = "en-US"; } catch {}
-        return;
-      }
-
-      if (error === "not-allowed" || error === "service-not-allowed") {
-        isRecordingRef.current = false;
-        setIsRecording(false);
-        setAiListenPaused(false);
-        stopTranslatorMic();
-        showDynamicToast("Microphone permission denied. Enable the mic in your browser settings to use the AI Translator.");
-        return;
-      }
-
-      if (error === "audio-capture") {
-        isRecordingRef.current = false;
-        setIsRecording(false);
-        setAiListenPaused(false);
-        stopTranslatorMic();
-        showDynamicToast("Could not capture audio. Check microphone permission or close other apps using the mic.");
-        return;
-      }
-
-      if (error === "network") {
-        showDynamicToast("Speech recognition lost network access. Check your connection.");
-      }
-    };
-
-    recognitionRef.current = recognition;
-    try {
-      recognition.start();
-    } catch {
-      return false;
-    }
-    setAiListenPaused(false);
-    return true;
-  };
-  bootSpeechRecognitionRef.current = bootSpeechRecognition;
-
-  const finishTranslatorUnlock = async (resumePromise: Promise<void>, micPromise: Promise<MediaStream>) => {
-    try { await resumePromise; } catch {}
-    try {
-      const stream = await micPromise;
-      stream.getTracks().forEach((track) => track.stop());
-      return true;
-    } catch (err: any) {
-      const name = err?.name || "";
-      if (name === "NotAllowedError" || name === "PermissionDeniedError" || name === "SecurityError") {
-        isRecordingRef.current = false;
-        translatorGenerationRef.current += 1;
-        try { recognitionRef.current?.abort(); } catch {}
-        recognitionRef.current = null;
-        setIsRecording(false);
-        setAiListenPaused(false);
-        stopTranslatorMic();
-        toastMicError(err);
-        return false;
-      }
-      return true;
-    }
-  };
+  const handleTranscriptSegment = useCallback((segment: TranscriptSegment, fullText: string) => {
+    fullTranscriptRef.current = fullText;
+    setTranscript(fullText || `${segment.speaker}: ${segment.text}`);
+  }, []);
 
   const handleStartAI = async () => {
-    const SpeechRecognition = getSpeechRecognitionCtor();
-    if (!SpeechRecognition) {
-      showDynamicToast("AI speech detection is not supported in this mobile browser.");
+    if (!token) {
+      showDynamicToast("Wait for the room to connect before starting transcription.");
       return;
     }
 
-    const { resumePromise, micPromise } = beginTranslatorFromUserGesture();
-
+    agentAbortRef.current?.abort();
+    const abort = new AbortController();
+    agentAbortRef.current = abort;
     isRecordingRef.current = true;
     setIsRecording(true);
-    setAiListenPaused(false);
-    if (aiLanguageRef.current === "Auto") sttLangRef.current = "";
+    showDynamicToast("Server AI agent is joining to transcribe the room.");
 
-    const started = bootSpeechRecognition();
-    if (!started) {
+    try {
+      const res = await fetch("/api/transcription-agent", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ room: roomId, language: aiLanguageRef.current }),
+        signal: abort.signal,
+      });
+
+      const contentType = res.headers.get("content-type") || "";
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ error: "Failed to start transcription agent." }));
+        throw new Error(data.error || "Failed to start transcription agent.");
+      }
+
+      if (contentType.includes("text/event-stream") && res.body) {
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        while (!abort.signal.aborted) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const chunks = buffer.split("\n\n");
+          buffer = chunks.pop() || "";
+          for (const chunk of chunks) {
+            const dataLine = chunk.split("\n").find((line) => line.startsWith("data: "));
+            if (!dataLine) continue;
+            try {
+              const payload = JSON.parse(dataLine.slice(6)) as {
+                error?: string;
+                transcript?: string;
+                state?: string;
+              };
+              if (payload.error) {
+                showDynamicToast(payload.error);
+              }
+              if (payload.transcript) {
+                fullTranscriptRef.current = payload.transcript;
+                setTranscript(payload.transcript);
+              }
+            } catch {
+              // Ignore malformed SSE frames.
+            }
+          }
+        }
+      } else {
+        const data = await res.json();
+        if (data.transcript) {
+          fullTranscriptRef.current = data.transcript;
+          setTranscript(data.transcript);
+        }
+        const poll = setInterval(async () => {
+          if (!isRecordingRef.current) {
+            clearInterval(poll);
+            return;
+          }
+          try {
+            const snap = await fetch(`/api/transcription-agent?room=${encodeURIComponent(roomId)}`);
+            const body = await snap.json();
+            if (body.transcript) {
+              fullTranscriptRef.current = body.transcript;
+              setTranscript(body.transcript);
+            }
+          } catch {
+            // Polling is a fallback while the agent writes to KV.
+          }
+        }, 2500);
+      }
+    } catch (error: unknown) {
+      if ((error as { name?: string })?.name === "AbortError") return;
       isRecordingRef.current = false;
       setIsRecording(false);
-      showDynamicToast("Failed to start the AI Translator. Please tap the button again.");
-      return;
+      showDynamicToast(error instanceof Error ? error.message : "Failed to start the transcription agent.");
     }
-
-    showDynamicToast("AI Translator is listening.");
-    await finishTranslatorUnlock(resumePromise, micPromise);
-  };
-
-  const handleResumeAI = async () => {
-    const { resumePromise, micPromise } = beginTranslatorFromUserGesture();
-
-    isRecordingRef.current = true;
-    setIsRecording(true);
-    setAiListenPaused(false);
-
-    const started = bootSpeechRecognition();
-    if (!started) {
-      setAiListenPaused(true);
-      showDynamicToast("Failed to start the AI Translator. Please tap the button again.");
-      return;
-    }
-
-    await finishTranslatorUnlock(resumePromise, micPromise);
   };
 
   const handleStopAI = async () => {
     isRecordingRef.current = false;
-    translatorGenerationRef.current += 1;
-    setAiListenPaused(false);
-    try { recognitionRef.current?.stop(); } catch {}
-    recognitionRef.current = null;
-    stopTranslatorMic();
-    if (audioContextRef.current && audioContextRef.current.state === "running") {
-      try { await audioContextRef.current.suspend(); } catch {}
-    }
+    agentAbortRef.current?.abort();
+    agentAbortRef.current = null;
     setIsRecording(false);
     setLoadingAI(true);
     setSummary("");
 
     try {
+      await fetch("/api/transcription-agent", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ room: roomId }),
+      });
+      const snap = await fetch(`/api/transcription-agent?room=${encodeURIComponent(roomId)}`);
+      const snapData = await snap.json();
+      if (snapData.transcript) {
+        fullTranscriptRef.current = snapData.transcript;
+        setTranscript(snapData.transcript);
+      }
       const raw = (fullTranscriptRef.current || transcript).trim();
       const nativeTranscript = await runNativeScriptRestore(raw);
       const res = await fetch("/api/ai-summary", {
@@ -1085,14 +789,8 @@ function RoomContent() {
 
   const handleRoomDisconnect = useCallback(() => {
     isRecordingRef.current = false;
-    translatorGenerationRef.current += 1;
-    setAiListenPaused(false);
-    try { recognitionRef.current?.abort(); } catch {}
-    recognitionRef.current = null;
-    try { micAudioNodeRef.current?.disconnect(); } catch {}
-    micAudioNodeRef.current = null;
-    micStreamRef.current?.getTracks().forEach((track) => track.stop());
-    micStreamRef.current = null;
+    agentAbortRef.current?.abort();
+    agentAbortRef.current = null;
 
     const endTime = Date.now();
     const diffMs = endTime - meetingStartTime;
@@ -1200,15 +898,16 @@ function RoomContent() {
       <RoomCallStage
         token={token}
         serverUrl={serverUrl}
-        rawUserName={rawUserName || "Guest"}
         onConnected={handleRoomConnected}
         onDisconnected={handleRoomDisconnect}
         showDynamicToast={showDynamicToast}
         setMaxParticipants={setMaxParticipants}
         isImportant={isImportant}
         isHost={isHost}
+        isAdmin={isAdmin}
         roomId={roomId}
-        joinRole={joinRole}
+        avatars={avatarMap}
+        onTranscript={handleTranscriptSegment}
       />
 
       {!isAIPanelOpen && (
@@ -1264,7 +963,7 @@ function RoomContent() {
               {transcript ? (
                 <p className="text-gray-300 text-xs leading-relaxed italic">"{transcript}"</p>
               ) : (
-                <p className="text-xs text-gray-600">Start recording to capture conversation...</p>
+                <p className="text-xs text-gray-600">Start the server AI agent to transcribe everyone in the room...</p>
               )}
             </div>
 
@@ -1361,16 +1060,9 @@ function RoomContent() {
                   Start AI Recording
                 </button>
               ) : (
-                <>
-                  {aiListenPaused && (
-                    <button onClick={handleResumeAI} type="button" className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold py-2.5 rounded-xl transition-all text-xs shadow-lg">
-                      Tap to continue listening
-                    </button>
-                  )}
-                  <button onClick={handleStopAI} className="w-full bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-400 text-white font-bold py-2.5 rounded-xl transition-all text-xs shadow-lg flex items-center justify-center gap-2">
-                    <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></span> Stop & Generate Summary
-                  </button>
-                </>
+                <button onClick={handleStopAI} className="w-full bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-400 text-white font-bold py-2.5 rounded-xl transition-all text-xs shadow-lg flex items-center justify-center gap-2">
+                  <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></span> Stop & Generate Summary
+                </button>
               )}
               {loadingAI && <p className="text-center text-[10px] text-[#00e5ff] font-medium animate-pulse">Translating & Processing...</p>}
             </div>

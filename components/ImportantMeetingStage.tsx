@@ -15,6 +15,8 @@ import {
 } from "@dtelecom/components-react";
 import { RoomEvent, Track } from "@dtelecom/livekit-client";
 import { parseImportantMeta, type ImportantRole } from "../lib/important-meetings";
+import { kickParticipant, muteParticipant, updateStageParticipant } from "../lib/moderation-client";
+import { isHostRole, isManagerRole } from "../lib/types";
 
 function subscribePublication(pub: { setSubscribed?: (v: boolean) => void; isSubscribed?: boolean }) {
   if (typeof pub?.setSubscribed !== "function") return;
@@ -37,11 +39,13 @@ function initialsFor(label: string) {
   return letters;
 }
 
-function avatarFor(label: string) {
+function avatarFor(label: string, metadata?: string) {
+  const fromMeta = parseImportantMeta(metadata).avatar;
+  if (fromMeta) return fromMeta;
   try {
     const clean = label.replace(" (Host)", "").replace(" (You)", "").trim();
-    const db = JSON.parse(localStorage.getItem("dspaces_db") || "[]");
-    const hit = db.find((u: { name?: string; avatar?: string }) => u.name === clean);
+    const db = JSON.parse(localStorage.getItem("dspaces_db") || "[]") as Array<{ name?: string; avatar?: string }>;
+    const hit = db.find((u) => u.name === clean);
     return hit?.avatar || null;
   } catch {
     return null;
@@ -62,6 +66,7 @@ type StageActions = {
   isHost: boolean;
   roomId: string;
   serverUrl: string;
+  token: string;
   showDynamicToast: (msg: string) => void;
 };
 
@@ -85,8 +90,8 @@ function TileHostMenu({
 
   const local = room.localParticipant;
   const localMeta = parseImportantMeta(local.metadata);
-  const isSupremeHost = actions.isHost || localMeta.role === "supreme_host";
-  const isCoHostUser = !isSupremeHost && (localMeta.isCoHost || localMeta.role === "cohost");
+  const isSupremeHost = actions.isHost || isHostRole(localMeta.role);
+  const isCoHostUser = !isSupremeHost && (localMeta.isCoHost || isManagerRole(localMeta.role));
   const isLocal = identity === local.identity;
   if (isLocal) return null;
   if (role === "supreme_host") return null;
@@ -98,28 +103,61 @@ function TileHostMenu({
   const runAction = async (action: "demote" | "make-cohost", successMsg: string) => {
     setBusy(action);
     try {
-      const res = await fetch("/api/update-participant", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          room: actions.roomId,
-          identity,
-          serverUrl: actions.serverUrl,
-          action,
-          actorIdentity: local.identity,
-        }),
+      await updateStageParticipant({
+        room: actions.roomId,
+        identity,
+        token: actions.token,
+        serverUrl: actions.serverUrl,
+        action,
       });
-      const data = await res.json();
-      actions.showDynamicToast(data.success ? successMsg : (data.error || "Failed to update participant."));
+      actions.showDynamicToast(successMsg);
       setOpen(false);
-    } catch {
-      actions.showDynamicToast("Failed to update participant.");
+    } catch (error: unknown) {
+      actions.showDynamicToast(error instanceof Error ? error.message : "Failed to update participant.");
     } finally {
       setBusy("");
     }
   };
 
-  const cleanName = identity.replace(" (Host)", "").replace(" (You)", "").trim();
+  const runMute = async () => {
+    setBusy("mute");
+    try {
+      const participant = room.getParticipantByIdentity(identity);
+      const audio = participant?.getTrack(Track.Source.Microphone);
+      await muteParticipant({
+        room: actions.roomId,
+        identity,
+        token: actions.token,
+        serverUrl: actions.serverUrl,
+        trackSid: audio?.trackSid,
+        type: "audio",
+      });
+      actions.showDynamicToast(`Muted ${name}`);
+      setOpen(false);
+    } catch (error: unknown) {
+      actions.showDynamicToast(error instanceof Error ? error.message : "Failed to mute participant.");
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const runKick = async () => {
+    setBusy("kick");
+    try {
+      await kickParticipant({
+        room: actions.roomId,
+        identity,
+        token: actions.token,
+        serverUrl: actions.serverUrl,
+      });
+      actions.showDynamicToast(`Removed ${name} from the room`);
+      setOpen(false);
+    } catch (error: unknown) {
+      actions.showDynamicToast(error instanceof Error ? error.message : "Failed to remove participant.");
+    } finally {
+      setBusy("");
+    }
+  };
 
   return (
     <div className="absolute top-2 right-2 z-20">
@@ -159,22 +197,18 @@ function TileHostMenu({
           <button
             type="button"
             className="block w-full px-3 py-2 text-left text-sm text-white"
-            onClick={() => {
-              if ((window as any).sendHostAction) (window as any).sendHostAction("MUTE_USER", cleanName);
-              setOpen(false);
-            }}
+            disabled={busy === "mute"}
+            onClick={() => void runMute()}
           >
-            Mute
+            {busy === "mute" ? "Muting..." : "Mute"}
           </button>
           <button
             type="button"
             className="block w-full px-3 py-2 text-left text-sm text-red-300"
-            onClick={() => {
-              if ((window as any).sendHostAction) (window as any).sendHostAction("KICK_USER", cleanName);
-              setOpen(false);
-            }}
+            disabled={busy === "kick"}
+            onClick={() => void runKick()}
           >
-            Kick
+            {busy === "kick" ? "Removing..." : "Kick"}
           </button>
         </div>
       )}
@@ -186,7 +220,7 @@ function ImportantParticipantTile({ supremeHostId }: { supremeHostId?: string })
   const participant = useParticipantContext();
   const [mediaTick, setMediaTick] = useState(0);
   const label = displayName(participant.identity, participant.name);
-  const avatar = avatarFor(label);
+  const avatar = avatarFor(label, participant.metadata);
   const role = deriveRole(
     participant.identity,
     participant.metadata,
@@ -256,11 +290,13 @@ export function ImportantMeetingStage({
   isHost,
   roomId,
   serverUrl,
+  token,
   showDynamicToast,
 }: {
   isHost: boolean;
   roomId: string;
   serverUrl: string;
+  token: string;
   showDynamicToast: (msg: string) => void;
 }) {
   const room = useRoomContext();
@@ -299,7 +335,7 @@ export function ImportantMeetingStage({
     (isHost ? room.localParticipant.identity : undefined);
 
   return (
-    <StageActionsContext.Provider value={{ isHost, roomId, serverUrl, showDynamicToast }}>
+    <StageActionsContext.Provider value={{ isHost, roomId, serverUrl, token, showDynamicToast }}>
       <div className="lk-video-conference important-meeting-stage">
         <LayoutContextProvider
           value={layoutContext}
@@ -317,7 +353,7 @@ export function ImportantMeetingStage({
                 </div>
               )}
             </div>
-            <ControlBar controls={{ chat: true }} />
+            <ControlBar controls={{ chat: true }} isAdmin={isHost} />
           </div>
           <Chat style={{ display: showChat ? "flex" : "none" }} />
         </LayoutContextProvider>

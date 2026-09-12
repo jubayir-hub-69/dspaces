@@ -1,6 +1,15 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: false,
+  experimental: {
+    serverComponentsExternalPackages: [
+      "@dtelecom/server-sdk-node",
+      "@dtelecom/agents-js",
+      "@discordjs/opus",
+      "opusscript",
+      "werift",
+    ],
+  },
   typescript: {
     // !! WARN !!
     // Dangerously allow production builds to successfully complete even if
@@ -20,18 +29,20 @@ const nextConfig = {
     "@solana/wallet-adapter-solflare",
     "@solana/wallet-adapter-backpack",
   ],
-  webpack: (config) => {
-    config.resolve.fallback = {
-      ...(config.resolve.fallback || {}),
-      fs: false,
-      os: false,
-      path: false,
-      crypto: false,
-      stream: false,
-      http: false,
-      https: false,
-      zlib: false,
-    };
+  webpack: (config, { isServer }) => {
+    if (!isServer) {
+      config.resolve.fallback = {
+        ...(config.resolve.fallback || {}),
+        fs: false,
+        os: false,
+        path: false,
+        crypto: false,
+        stream: false,
+        http: false,
+        https: false,
+        zlib: false,
+      };
+    }
     return config;
   },
 };

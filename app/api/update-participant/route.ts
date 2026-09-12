@@ -1,64 +1,51 @@
-import { AccessToken, RoomServiceClient } from "@dtelecom/server-sdk-js";
 import { NextResponse } from "next/server";
+import { bearerToken, clientIpFromRequest, getRoomService, verifyRoomParticipant } from "../../../lib/dtelecom";
 import {
   addCoHost,
   allowSpeaker,
-  getRoomHost,
-  isCoHost,
-  markImportantRoom,
   parseImportantMeta,
   removeCoHost,
   revokeSpeaker,
   serializeImportantMeta,
-  type ImportantMeta,
 } from "../../../lib/important-meetings";
+import { getRoomState, isRoomCoHost, isRoomHost } from "../../../lib/room-store";
+import type { ImportantMeta } from "../../../lib/important-meetings";
 
-function toApiHost(serverUrl: string) {
-  return serverUrl.replace(/^wss:/i, "https:").replace(/^ws:/i, "http:");
-}
+export const dynamic = "force-dynamic";
 
 type Action = "allow" | "demote" | "make-cohost";
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const roomName = body.room as string | undefined;
-    const identity = body.identity as string | undefined;
-    const serverUrl = body.serverUrl as string | undefined;
-    const actorIdentity = (body.actorIdentity as string | undefined) || "";
-    const action = (body.action as Action | undefined) || (body.canPublish === false ? "demote" : "allow");
+    const body = (await req.json()) as {
+      room?: string;
+      identity?: string;
+      serverUrl?: string;
+      action?: Action;
+      canPublish?: boolean;
+    };
+    const roomName = body.room;
+    const identity = body.identity;
+    const token = bearerToken(req);
+    const action: Action = body.action || (body.canPublish === false ? "demote" : "allow");
 
-    if (!roomName || !identity) {
+    if (!roomName || !identity || !token) {
       return NextResponse.json(
-        { success: false, error: "Missing room or identity." },
+        { success: false, error: "Missing room, identity, or access token." },
         { status: 400 }
       );
     }
 
     if (action !== "allow" && action !== "demote" && action !== "make-cohost") {
-      return NextResponse.json(
-        { success: false, error: "Unknown action." },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error: "Unknown action." }, { status: 400 });
     }
 
-    const apiKey = process.env.DTELECOM_API_KEY;
-    const apiSecret = process.env.DTELECOM_API_SECRET;
-
-    if (!apiKey || !apiSecret) {
-      return NextResponse.json(
-        { success: false, error: "Missing DTELECOM API keys in environment variables." },
-        { status: 500 }
-      );
-    }
-
-    markImportantRoom(roomName);
-
-    const hostId = getRoomHost(roomName);
-    const actorIsSupremeHost = !!actorIdentity && !!hostId && actorIdentity === hostId;
-    const actorIsCoHost = !!actorIdentity && isCoHost(roomName, actorIdentity);
-    const targetIsSupremeHost = !!hostId && identity === hostId;
-    const targetIsCoHost = isCoHost(roomName, identity);
+    const caller = verifyRoomParticipant(token, roomName);
+    const state = await getRoomState(roomName);
+    const actorIsSupremeHost = caller.roomAdmin || isRoomHost(state, caller.identity);
+    const actorIsCoHost = isRoomCoHost(state, caller.identity);
+    const targetIsSupremeHost = isRoomHost(state, identity);
+    const targetIsCoHost = isRoomCoHost(state, identity);
 
     if (targetIsSupremeHost) {
       return NextResponse.json(
@@ -67,21 +54,21 @@ export async function POST(req: Request) {
       );
     }
 
-    if (actorIdentity && !actorIsSupremeHost && !actorIsCoHost) {
+    if (!actorIsSupremeHost && !actorIsCoHost) {
       return NextResponse.json(
         { success: false, error: "Only the host or a co-host can manage the stage." },
         { status: 403 }
       );
     }
 
-    if (action === "make-cohost" && actorIdentity && !actorIsSupremeHost) {
+    if (action === "make-cohost" && !actorIsSupremeHost) {
       return NextResponse.json(
         { success: false, error: "Only the Supreme Host can appoint a co-host." },
         { status: 403 }
       );
     }
 
-    if (targetIsCoHost && action !== "make-cohost" && actorIdentity && !actorIsSupremeHost) {
+    if (targetIsCoHost && action !== "make-cohost" && !actorIsSupremeHost) {
       return NextResponse.json(
         { success: false, error: "Only the Supreme Host can manage a co-host." },
         { status: 403 }
@@ -92,65 +79,51 @@ export async function POST(req: Request) {
     let nextMeta: ImportantMeta = { role: "speaker", isCoHost: false };
 
     if (action === "allow") {
-      allowSpeaker(roomName, identity);
+      await allowSpeaker(roomName, identity);
       nextPublish = true;
       nextMeta = targetIsCoHost
         ? { role: "cohost", isCoHost: true }
         : { role: "speaker", isCoHost: false };
     } else if (action === "demote") {
-      removeCoHost(roomName, identity);
-      revokeSpeaker(roomName, identity);
+      await removeCoHost(roomName, identity);
+      await revokeSpeaker(roomName, identity);
       nextPublish = false;
       nextMeta = { role: "listener", isCoHost: false };
     } else if (action === "make-cohost") {
-      addCoHost(roomName, identity);
+      await addCoHost(roomName, identity);
       nextPublish = true;
       nextMeta = { role: "cohost", isCoHost: true };
     }
 
-    let apiHost: string | undefined;
-    if (serverUrl) {
-      apiHost = toApiHost(serverUrl);
-    } else {
-      const at = new AccessToken(apiKey, apiSecret, { identity: "server" });
-      let clientIp = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-      if (!clientIp || clientIp === "127.0.0.1" || clientIp === "::1") {
-        clientIp = "8.8.8.8";
-      }
-      apiHost = await at.getApiUrl(clientIp);
-    }
-
-    if (!apiHost) {
-      return NextResponse.json(
-        { success: false, error: "Could not resolve dTelecom API host." },
-        { status: 500 }
-      );
-    }
-
-    const roomService = new RoomServiceClient(apiHost, apiKey, apiSecret);
+    const roomService = await getRoomService(body.serverUrl, clientIpFromRequest(req));
 
     let metadata = serializeImportantMeta(nextMeta);
     let name = "";
-    let existingPerm: {
-      canSubscribe?: boolean;
-      canPublishData?: boolean;
-      canPublishSources?: number[];
-      hidden?: boolean;
-      recorder?: boolean;
-      canUpdateMetadata?: boolean;
-    } | undefined;
+    let existingPerm:
+      | {
+          canSubscribe?: boolean;
+          canPublishData?: boolean;
+          canPublishSources?: number[];
+          hidden?: boolean;
+          recorder?: boolean;
+          canUpdateMetadata?: boolean;
+        }
+      | undefined;
+    let avatar = "";
 
     try {
       const participant = await roomService.getParticipant(roomName, identity);
       const existing = parseImportantMeta(participant.metadata);
+      avatar = existing.avatar || "";
       metadata = serializeImportantMeta({
         ...existing,
         ...nextMeta,
+        avatar,
       });
       name = participant.name || identity;
       existingPerm = participant.permission;
     } catch {
-      // Still attempt the permission update if lookup fails.
+      // Still attempt the permission update if lookup fails (local-only read).
     }
 
     await roomService.updateParticipant(
@@ -170,10 +143,8 @@ export async function POST(req: Request) {
     );
 
     return NextResponse.json({ success: true, role: nextMeta.role, canPublish: nextPublish });
-  } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error?.message || "Unknown error" },
-      { status: 500 }
-    );
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

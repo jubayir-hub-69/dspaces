@@ -85,7 +85,7 @@ const steps = [
   {
     n: "6",
     title: "Use the AI assistant",
-    body: "Open Ask AI, tap Start AI Recording, then Stop & Generate Summary. Transcripts, translations, and reports also appear in your Profile history.",
+    body: "Open Ask AI, tap Start AI Recording, then Stop & Generate Summary. A backend AI agent joins the room and transcribes everyone’s audio. Reports also appear in your Profile history.",
   },
 ];
 
