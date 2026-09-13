@@ -226,6 +226,18 @@ async function startRoomAgent(options: AgentStartOptions): Promise<AgentHandle> 
     }
   };
 
+  const isAudioTrack = (track: unknown): track is RemoteAudioTrack =>
+    !!track && typeof (track as RemoteAudioTrack).createStream === "function";
+
+  const frameToPcm = (frame: { toBuffer?: () => Buffer; data?: Int16Array } | Buffer): Buffer => {
+    if (Buffer.isBuffer(frame)) return frame;
+    if (frame && typeof frame.toBuffer === "function") return frame.toBuffer();
+    if (frame?.data instanceof Int16Array) {
+      return Buffer.from(frame.data.buffer, frame.data.byteOffset, frame.data.byteLength);
+    }
+    return Buffer.alloc(0);
+  };
+
   const listenToAudio = (track: RemoteAudioTrack, participant: { identity?: string; name?: string }) => {
     const identity = participant.identity || participant.name || "Participant";
     if (identity === AGENT_IDENTITY) return;
@@ -237,7 +249,7 @@ async function startRoomAgent(options: AgentStartOptions): Promise<AgentHandle> 
         const stream = track.createStream(SAMPLE_RATE, 1);
         for await (const frame of stream) {
           if (stopped || options.signal.aborted) break;
-          const chunk = frame.toBuffer();
+          const chunk = frameToPcm(frame);
           if (!chunk.length) continue;
           const prev = buffers.get(identity) || Buffer.alloc(0);
           const next = Buffer.concat([prev, chunk]);
@@ -257,7 +269,7 @@ async function startRoomAgent(options: AgentStartOptions): Promise<AgentHandle> 
   const attachExistingTracks = () => {
     room.remoteParticipants.forEach((participant) => {
       participant.trackPublications.forEach((publication) => {
-        if (publication.track instanceof RemoteAudioTrack) {
+        if (isAudioTrack(publication.track)) {
           listenToAudio(publication.track, participant);
         }
       });
@@ -265,14 +277,24 @@ async function startRoomAgent(options: AgentStartOptions): Promise<AgentHandle> 
   };
 
   room.on("trackSubscribed", (track, _pub, participant) => {
-    if (track instanceof RemoteAudioTrack) {
+    if (isAudioTrack(track)) {
       listenToAudio(track, participant);
     }
   });
   room.on("trackPublished", () => attachExistingTracks());
-  room.on("participantConnected", () => attachExistingTracks());
+  room.on("participantConnected", (participant) => {
+    participant.on("trackSubscribed", (track: unknown) => {
+      if (isAudioTrack(track)) listenToAudio(track, participant);
+    });
+    attachExistingTracks();
+  });
 
   await room.connect(wsUrl, token, { autoSubscribe: true });
+  room.remoteParticipants.forEach((participant) => {
+    participant.on("trackSubscribed", (track: unknown) => {
+      if (isAudioTrack(track)) listenToAudio(track, participant);
+    });
+  });
   attachExistingTracks();
   const attachTimer = setInterval(() => {
     if (stopped || options.signal.aborted) return;

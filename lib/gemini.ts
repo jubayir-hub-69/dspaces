@@ -15,10 +15,13 @@ export async function selectGeminiModel(apiKey: string): Promise<string> {
     (m) => m.supportedGenerationMethods?.includes("generateContent") && m.name.includes("gemini")
   );
   return (
-    valid.find((m) => /gemini-3\.6-flash/i.test(m.name))?.name ||
+    valid.find((m) => /gemini-2\.5-flash/i.test(m.name))?.name ||
+    valid.find((m) => /gemini-2\.0-flash/i.test(m.name))?.name ||
+    valid.find((m) => /gemini-1\.5-flash/i.test(m.name))?.name ||
     valid.find((m) => /flash/i.test(m.name))?.name ||
+    valid.find((m) => /gemini-3\.6-flash/i.test(m.name))?.name ||
     valid[0]?.name ||
-    "models/gemini-3.6-flash"
+    "models/gemini-2.0-flash"
   );
 }
 
