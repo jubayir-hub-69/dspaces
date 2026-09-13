@@ -41,7 +41,7 @@ export async function DELETE(req: Request) {
 
 export async function POST(req: Request) {
   const encoder = new TextEncoder();
-  const body = (await req.json()) as { room?: string; language?: string };
+  const body = (await req.json()) as { room?: string; language?: string; serverUrl?: string };
   const room = (body.room || "").trim();
   const token = bearerToken(req);
 
@@ -75,6 +75,7 @@ export async function POST(req: Request) {
           roomName: room,
           language: body.language,
           signal: abort.signal,
+          serverUrl: body.serverUrl,
         });
         send("status", { state: "connected" });
 

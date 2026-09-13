@@ -1,13 +1,13 @@
 import { EventEmitter } from "events";
 import { VoiceAgent } from "@dtelecom/agents-js";
-import { DataPacket_Kind, Room, RemoteAudioTrack } from "@dtelecom/server-sdk-node";
+import { DataPacket_Kind, RemoteAudioTrack, Room } from "@dtelecom/server-sdk-node";
 import { geminiTranscribeAudio, pcm16ToWav } from "./gemini";
-import { AGENT_IDENTITY, createAccessToken, getRoomService, TRANSCRIPT_TOPIC } from "./dtelecom";
+import { AGENT_IDENTITY, createAccessToken, getRoomService, sanitizeMediaUrl, TRANSCRIPT_TOPIC } from "./dtelecom";
 import { appendTranscript, getRoomState, updateRoomState } from "./room-store";
 import type { TranscriptSegment } from "./types";
 
 const SAMPLE_RATE = 16000;
-const FLUSH_BYTES = SAMPLE_RATE * 2 * 3;
+const FLUSH_BYTES = SAMPLE_RATE * 2 * 2;
 
 type AgentHandle = {
   stop: () => Promise<void>;
@@ -16,6 +16,33 @@ type AgentHandle = {
 type DataPublisher = {
   publishData: (data: Uint8Array, options?: { topic?: string; kind?: DataPacket_Kind }) => Promise<void>;
 };
+
+type AgentStartOptions = {
+  roomName: string;
+  language?: string;
+  signal: AbortSignal;
+  geminiKey: string;
+  serverUrl?: string;
+};
+
+async function resolveAgentConnection(options: AgentStartOptions) {
+  const at = await createAccessToken({
+    identity: AGENT_IDENTITY,
+    name: "dSpaces AI Agent",
+    metadata: JSON.stringify({ role: "guest", isCoHost: false, agent: true }),
+    room: options.roomName,
+    canPublish: false,
+    canPublishData: true,
+    canSubscribe: true,
+    hidden: false,
+  });
+  const token = at.toJwt();
+  const wsUrl = sanitizeMediaUrl(options.serverUrl) || (await at.getWsUrl());
+  if (!wsUrl) {
+    throw new Error("dTelecom could not assign a video node for the AI agent.");
+  }
+  return { token, wsUrl };
+}
 
 async function publishTranscript(
   roomName: string,
@@ -105,12 +132,7 @@ class SilentLLM {
   }
 }
 
-async function startVoiceAgent(options: {
-  roomName: string;
-  language?: string;
-  signal: AbortSignal;
-  geminiKey: string;
-}): Promise<AgentHandle> {
+async function startVoiceAgent(options: AgentStartOptions): Promise<AgentHandle> {
   const at = await createAccessToken({
     identity: AGENT_IDENTITY,
     name: "dSpaces AI Agent",
@@ -118,10 +140,10 @@ async function startVoiceAgent(options: {
     room: options.roomName,
     canPublish: true,
     canPublishData: true,
-    hidden: true,
+    canSubscribe: true,
+    hidden: false,
   });
-  const token = at.toJwt();
-  const wsUrl = await at.getWsUrl();
+  const wsUrl = sanitizeMediaUrl(options.serverUrl) || (await at.getWsUrl());
   if (!wsUrl) {
     throw new Error("dTelecom could not assign a video node for the AI agent.");
   }
@@ -154,7 +176,7 @@ async function startVoiceAgent(options: {
     room: options.roomName,
     identity: AGENT_IDENTITY,
     name: "dSpaces AI Agent",
-    token,
+    token: at.toJwt(),
     wsUrl,
   });
 
@@ -173,29 +195,11 @@ async function startVoiceAgent(options: {
   return { stop };
 }
 
-async function startRoomAgent(options: {
-  roomName: string;
-  language?: string;
-  signal: AbortSignal;
-  geminiKey: string;
-}): Promise<AgentHandle> {
-  const at = await createAccessToken({
-    identity: AGENT_IDENTITY,
-    name: "dSpaces AI Agent",
-    metadata: JSON.stringify({ role: "guest", isCoHost: false, agent: true }),
-    room: options.roomName,
-    canPublish: false,
-    canPublishData: true,
-    hidden: true,
-  });
-  const token = at.toJwt();
-  const wsUrl = await at.getWsUrl();
-  if (!wsUrl) {
-    throw new Error("dTelecom could not assign a video node for the AI agent.");
-  }
-
+async function startRoomAgent(options: AgentStartOptions): Promise<AgentHandle> {
+  const { token, wsUrl } = await resolveAgentConnection(options);
   const room = new Room();
   const buffers = new Map<string, Buffer>();
+  const listening = new Set<string>();
   let stopped = false;
 
   const flushSpeaker = async (speaker: string, force = false) => {
@@ -222,10 +226,12 @@ async function startRoomAgent(options: {
     }
   };
 
-  room.on("trackSubscribed", (track, _pub, participant) => {
-    if (!(track instanceof RemoteAudioTrack)) return;
+  const listenToAudio = (track: RemoteAudioTrack, participant: { identity?: string; name?: string }) => {
     const identity = participant.identity || participant.name || "Participant";
     if (identity === AGENT_IDENTITY) return;
+    const key = `${identity}:${track.sid || identity}`;
+    if (listening.has(key)) return;
+    listening.add(key);
     void (async () => {
       try {
         const stream = track.createStream(SAMPLE_RATE, 1);
@@ -242,15 +248,41 @@ async function startRoomAgent(options: {
         }
       } catch {
         // Track ended or agent disconnected.
+      } finally {
+        listening.delete(key);
       }
     })();
+  };
+
+  const attachExistingTracks = () => {
+    room.remoteParticipants.forEach((participant) => {
+      participant.trackPublications.forEach((publication) => {
+        if (publication.track instanceof RemoteAudioTrack) {
+          listenToAudio(publication.track, participant);
+        }
+      });
+    });
+  };
+
+  room.on("trackSubscribed", (track, _pub, participant) => {
+    if (track instanceof RemoteAudioTrack) {
+      listenToAudio(track, participant);
+    }
   });
+  room.on("trackPublished", () => attachExistingTracks());
+  room.on("participantConnected", () => attachExistingTracks());
 
   await room.connect(wsUrl, token, { autoSubscribe: true });
+  attachExistingTracks();
+  const attachTimer = setInterval(() => {
+    if (stopped || options.signal.aborted) return;
+    attachExistingTracks();
+  }, 1500);
 
   const stop = async () => {
     if (stopped) return;
     stopped = true;
+    clearInterval(attachTimer);
     for (const speaker of buffers.keys()) {
       await flushSpeaker(speaker, true);
     }
@@ -276,6 +308,7 @@ export async function runTranscriptionAgent(options: {
   roomName: string;
   language?: string;
   signal: AbortSignal;
+  serverUrl?: string;
 }): Promise<AgentHandle> {
   const geminiKey = process.env.GEMINI_API_KEY?.trim();
   if (!geminiKey) {
@@ -285,8 +318,8 @@ export async function runTranscriptionAgent(options: {
   await updateRoomState(options.roomName, (current) => ({ ...current, agentActive: true }));
 
   try {
-    return await startVoiceAgent({ ...options, geminiKey });
+    return await startRoomAgent({ ...options, geminiKey });
   } catch {
-    return startRoomAgent({ ...options, geminiKey });
+    return startVoiceAgent({ ...options, geminiKey });
   }
 }

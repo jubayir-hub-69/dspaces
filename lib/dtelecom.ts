@@ -78,6 +78,13 @@ export function verifyRoomParticipant(token: string, room: string): VerifiedPart
   };
 }
 
+export function sanitizeMediaUrl(url?: string | null): string | undefined {
+  if (!url || typeof url !== "string") return undefined;
+  const trimmed = url.trim();
+  if (!/^wss:\/\//i.test(trimmed)) return undefined;
+  return trimmed;
+}
+
 export async function createAccessToken(options: {
   identity: string;
   name?: string;
@@ -87,6 +94,7 @@ export async function createAccessToken(options: {
   roomAdmin?: boolean;
   hidden?: boolean;
   canPublishData?: boolean;
+  canSubscribe?: boolean;
 }) {
   const { apiKey, apiSecret } = getDtelecomCredentials();
   const at = new AccessToken(apiKey, apiSecret, {
@@ -100,7 +108,7 @@ export async function createAccessToken(options: {
     room: options.room,
     roomAdmin: options.roomAdmin === true,
     canPublish: options.canPublish,
-    canSubscribe: true,
+    canSubscribe: options.canSubscribe !== false,
     canPublishData: options.canPublishData !== false,
     hidden: options.hidden === true,
   });

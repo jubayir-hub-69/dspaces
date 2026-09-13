@@ -180,7 +180,20 @@
 
 /* Mobile: chat is a bottom-sheet overlay so it never squashes the video grid
    or covers the control bar / Ask AI button while closed. */
+.dspaces-ask-ai {
+  pointer-events: auto;
+}
+
 @media (max-width: 767px) {
+  .room-stage .lk-chat-form {
+    position: relative;
+    z-index: 70;
+  }
+
+  .room-stage:has(.lk-chat:not(.lk-chat-hidden):not([style*="display: none"])) .dspaces-ask-ai {
+    display: none;
+  }
+
   .room-stage .lk-video-conference {
     display: flex;
     flex-direction: column;

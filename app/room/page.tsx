@@ -652,7 +652,7 @@ function RoomContent() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ room: roomId, language: aiLanguageRef.current }),
+        body: JSON.stringify({ room: roomId, language: aiLanguageRef.current, serverUrl }),
         signal: abort.signal,
       });
 
@@ -940,7 +940,7 @@ function RoomContent() {
       {!isAIPanelOpen && (
         <button 
           onClick={() => setIsAIPanelOpen(true)} 
-          className="absolute bottom-24 right-4 sm:right-8 z-[45] bg-white/10 hover:bg-white/15 text-white px-5 py-3 rounded-full shadow-lg shadow-cyan-500/20 border border-white/10 font-bold flex items-center gap-2 backdrop-blur-xl transition-all hover:scale-105 hover:border-cyan-400/40"
+          className="dspaces-ask-ai absolute z-[30] md:z-[45] max-md:top-[4.75rem] max-md:right-3 max-md:bottom-auto bottom-24 right-4 sm:right-8 bg-white/10 hover:bg-white/15 text-white px-4 py-2.5 md:px-5 md:py-3 rounded-full shadow-lg shadow-cyan-500/20 border border-white/10 font-bold flex items-center gap-2 backdrop-blur-xl transition-all hover:scale-105 hover:border-cyan-400/40"
         >
           <span className="text-[#00ff88]">✨</span> Ask AI
         </button>
