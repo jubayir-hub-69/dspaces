@@ -56,7 +56,8 @@ export function HostModeration({
       localIdentity={localParticipant?.identity}
       onKick={canModerate ? onKick : undefined}
       onMute={canModerate ? onMute : undefined}
-      aiAgentEnabled
+      roomId={roomId}
+      token={token}
     />
   );
 }

@@ -4,6 +4,7 @@
    carousel tiles (flex-shrink: 0 + 16/10 aspect-ratio) blow out vertically. */
 
 .room-stage .lk-room-container,
+.room-stage [data-lk-theme],
 .room-stage .lk-video-conference {
   height: 100%;
   width: 100%;
@@ -16,6 +17,7 @@
   display: flex;
   flex-direction: row;
   align-items: stretch;
+  flex: 1 1 0%;
 }
 
 .room-stage .lk-video-conference-inner {
@@ -26,7 +28,7 @@
   min-width: 0;
   min-height: 0;
   height: 100%;
-  overflow: visible;
+  overflow: hidden;
 }
 
 .room-stage .lk-focus-layout-wrapper,
@@ -39,7 +41,7 @@
   width: 100%;
   min-height: 0;
   min-width: 0;
-  height: auto !important;
+  height: 100% !important;
   overflow: hidden;
 }
 
@@ -355,6 +357,7 @@
 /* ---- Equal-size grid when nobody is screen sharing / pinned ---- */
 
 .room-stage .lk-grid-layout {
+  display: grid;
   width: 100%;
   height: 100%;
   max-width: 100%;
@@ -362,12 +365,16 @@
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+  grid-template-columns: repeat(var(--lk-col-count, 1), minmax(0, 1fr));
+  grid-template-rows: repeat(var(--lk-row-count, 1), minmax(0, 1fr));
   grid-auto-rows: minmax(0, 1fr);
 }
 
 .room-stage .lk-grid-layout .lk-participant-tile {
   height: 100%;
   width: 100%;
+  min-height: 0;
+  min-width: 0;
   max-height: 100%;
 }
 

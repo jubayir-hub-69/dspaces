@@ -19,7 +19,6 @@ import {
 } from "@dtelecom/components-react";
 import {
   isEqualTrackRef,
-  isMobileBrowser,
   isTrackReference,
   log,
   type TrackReferenceOrPlaceholder,
@@ -27,13 +26,21 @@ import {
 } from "@dtelecom/components-core";
 import { RemoteTrackPublication, RoomEvent, Track, VideoQuality } from "@dtelecom/livekit-client";
 import { IdentifiedChatEntry } from "./IdentifiedChatEntry";
+import { usePersistentChat } from "./PersistentChat";
+import { isAiAgent } from "../lib/types";
 
 const MOBILE_CHAT_SHELL =
   "max-md:absolute max-md:inset-x-0 max-md:bottom-[5.5rem] max-md:z-50 max-md:flex max-md:h-[80vh] max-md:max-h-[calc(100%-5.5rem)] max-md:w-full max-md:max-w-full max-md:flex-col max-md:overflow-hidden max-md:rounded-t-2xl max-md:border max-md:border-white/10 max-md:bg-[#0b1220] max-md:shadow-2xl md:relative md:contents";
 
+type RoomVideoConferenceProps = VideoConferenceProps & {
+  roomId?: string;
+  token?: string;
+};
+
 /**
  * LiveKit VideoConference with mobile chat overlay + identified chat bubbles.
- * Track/layout behavior is kept in sync with the upstream prefab.
+ * Track/layout behavior is kept in sync with the upstream prefab, except the
+ * server AI agent is never rendered as a video tile.
  */
 export function RoomVideoConference({
   chatMessageFormatter,
@@ -45,16 +52,20 @@ export function RoomVideoConference({
   chatContext,
   languageOptions,
   supportedChatMessageTypes,
-  aiAgentEnabled = false,
   chatWidgetState,
+  roomId = "",
+  token = "",
   ...props
-}: VideoConferenceProps) {
+}: RoomVideoConferenceProps) {
   const [widgetState, setWidgetState] = React.useState<WidgetState>({
     showChat: false,
     unreadMessages: 0,
     unreadTranscriptions: 0,
     ...chatWidgetState,
   });
+
+  const persistedChat = usePersistentChat(roomId, token);
+  const resolvedChatContext = chatContext || persistedChat;
 
   const tracks = useTracks(
     [
@@ -64,6 +75,11 @@ export function RoomVideoConference({
     { updateOnlyOn: [RoomEvent.ActiveSpeakersChanged] }
   );
 
+  const visibleTracks = React.useMemo(
+    () => tracks.filter((track) => !isAiAgent(track.participant)),
+    [tracks]
+  );
+
   const widgetUpdate = (state: WidgetState) => {
     log.debug("updating widget state", state);
     setWidgetState(state);
@@ -71,19 +87,18 @@ export function RoomVideoConference({
 
   const layoutContext = useCreateLayoutContext({ initialWidgetState: widgetState });
 
-  const screenShareTracks = tracks
+  const screenShareTracks = visibleTracks
     .filter(isTrackReference)
     .filter((track) => track.publication.source === Track.Source.ScreenShare);
 
-  const aiAgentTrack = tracks.find((t) => t.participant.identity === "ai_agent");
   const focusTrack = usePinnedTracks(layoutContext)?.[0];
-  const carouselTracks = tracks.filter((track) => {
+  const carouselTracks = visibleTracks.filter((track) => {
     if (focusTrack && isEqualTrackRef(focusTrack, track)) {
       return false;
     }
-    return !(!focusTrack && aiAgentTrack && isEqualTrackRef(aiAgentTrack, track));
+    return true;
   });
-  const tracksWithTrackReference = tracks.filter(isTrackReference);
+  const tracksWithTrackReference = visibleTracks.filter(isTrackReference);
   const enabledVisibleTracks = tracksWithTrackReference.filter(
     (t) => t.publication.isEnabled && t.publication.track?.attachedElements[0]
   );
@@ -106,7 +121,7 @@ export function RoomVideoConference({
       layoutContext.pin.dispatch?.({ msg: "set_pin", trackReference: screenShareTracks[0] });
     } else if (
       (screenShareTracks.length === 0 && focusTrack?.source === Track.Source.ScreenShare) ||
-      tracks.length <= 1
+      visibleTracks.length <= 1
     ) {
       layoutContext.pin.dispatch?.({ msg: "clear_pin" });
     }
@@ -135,16 +150,15 @@ export function RoomVideoConference({
     });
   };
 
-  const isMobile = React.useMemo(() => isMobileBrowser(), []);
-  const showGridLayout = aiAgentEnabled ? !focusTrack && isMobile : !focusTrack;
+  const showGridLayout = !focusTrack;
 
   return (
-    <div className="lk-video-conference" {...props}>
+    <div className="lk-video-conference h-full w-full min-h-0" {...props}>
       <LayoutContextProvider value={layoutContext} onWidgetChange={widgetUpdate}>
         <div className="lk-video-conference-inner">
           {showGridLayout ? (
-            <div className="lk-grid-layout-wrapper">
-              <GridLayout tracks={tracks} gridLayouts={gridLayouts} aiAgentEnabled={aiAgentEnabled}>
+            <div className="lk-grid-layout-wrapper h-full w-full min-h-0">
+              <GridLayout tracks={visibleTracks} gridLayouts={gridLayouts}>
                 <ParticipantTileWrapper
                   onKick={onKick}
                   onMute={onMute}
@@ -153,13 +167,9 @@ export function RoomVideoConference({
               </GridLayout>
             </div>
           ) : (
-            <div className="lk-focus-layout-wrapper">
+            <div className="lk-focus-layout-wrapper h-full w-full min-h-0">
               <FocusLayoutContainer>
-                {aiAgentEnabled ? (
-                  (focusTrack || aiAgentTrack) ? <FocusLayout track={focusTrack || aiAgentTrack} /> : null
-                ) : (
-                  <FocusLayout track={focusTrack} />
-                )}
+                <FocusLayout track={focusTrack} />
                 <CarouselView tracks={carouselTracks}>
                   <ParticipantTileWrapper
                     onKick={onKick}
@@ -174,7 +184,7 @@ export function RoomVideoConference({
         </div>
         <div className={widgetState.showChat ? MOBILE_CHAT_SHELL : "hidden md:contents"}>
           <Chat
-            chatContext={chatContext}
+            chatContext={resolvedChatContext}
             style={{ display: widgetState.showChat ? "flex" : "none" }}
             messageFormatter={chatMessageFormatter}
             languageOptions={languageOptions}

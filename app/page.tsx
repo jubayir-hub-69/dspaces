@@ -4,8 +4,10 @@ import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useState, useEffect, useRef } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
+import { useSiwsAuth } from "../components/WalletProvider";
 import "@solana/wallet-adapter-react-ui/styles.css";
 import { AboutDspacesButton, AboutDspacesModal } from "../components/AboutDspacesModal";
+import { SolanaNetworkBadge } from "../components/SolanaNetworkBadge";
 import { fetchServerAccount, formatPrimaryIdentity, getDb, mergeServerAccount, normalizeEmail, readJsonSafe, resolvePrimaryAuth, saveDb, withPrimaryAuth, writePrimaryAuthFlag } from "../lib/account";
 
 // ==========================================
@@ -106,6 +108,8 @@ const WalletMultiButton = dynamic(
 export default function Home() {
   const router = useRouter();
   const { connected, publicKey, disconnect } = useWallet();
+  const { authenticated, authenticating } = useSiwsAuth();
+  const liveWalletRef = useRef(false);
 
   const [myAcc, setMyAcc] = useState<any>(null);
   const [roomId, setRoomId] = useState("");
@@ -180,7 +184,8 @@ export default function Home() {
   useEffect(() => {
     const sessionId = localStorage.getItem("dspaces_active_session");
 
-    if (connected && publicKey) {
+    if (connected && publicKey && authenticated) {
+      liveWalletRef.current = true;
       const walletStr = publicKey.toString();
       
       if (!sessionId) {
@@ -225,10 +230,11 @@ export default function Home() {
           setUserName(acc.name);
         });
       }
-    } else if (!connected && sessionId && myAcc && myAcc.wallet === sessionId) {
+    } else if (liveWalletRef.current && !connected && sessionId && myAcc && myAcc.wallet === sessionId) {
+      liveWalletRef.current = false;
       handleLogout();
     }
-  }, [connected, publicKey]);
+  }, [authenticated, connected, publicKey]);
 
   const handleSendOTP = async () => {
     if (!email.trim()) return showToast("Please enter a valid email address.");
@@ -403,7 +409,8 @@ export default function Home() {
           )}
 
           {!myAcc && (
-            <div className="hover:scale-105 transition-transform hidden sm:block">
+            <div className="hover:scale-105 transition-transform hidden sm:flex sm:items-center sm:gap-2">
+              <SolanaNetworkBadge compact />
               <WalletMultiButton className="!bg-indigo-600 hover:!bg-indigo-700 !h-10 !px-6 !rounded-xl !font-bold !shadow-lg !shadow-indigo-500/20" />
             </div>
           )}
@@ -419,6 +426,7 @@ export default function Home() {
                   {displayAccountInfo}
                 </span>
               </div>
+              {myAcc?.wallet && <SolanaNetworkBadge compact />}
               <button onClick={handleLogout} className="bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white px-4 py-2 rounded-lg text-xs font-bold transition-all duration-300">Logout</button>
             </div>
           )}
@@ -450,6 +458,14 @@ export default function Home() {
                 <div className="flex justify-center w-full relative z-40">
                   <WalletMultiButton style={{ width: "100%", justifyContent: "center", backgroundColor: "#4f46e5", borderRadius: "12px", height: "48px", fontWeight: "bold" }} />
                 </div>
+                <div className="mt-3 flex justify-center">
+                  <SolanaNetworkBadge />
+                </div>
+                <p className={`mt-2 text-[11px] leading-relaxed ${isDark ? "text-gray-500" : "text-gray-500"}`}>
+                  {authenticating
+                    ? "Approve the signature in Phantom to prove you own this wallet. No transaction is sent."
+                    : "After connecting, Phantom will ask you to sign a message. This proves wallet ownership and does not send a transaction."}
+                </p>
               </div>
 
               <div className={`flex-1 text-left p-6 rounded-2xl border backdrop-blur-md transition-all ${isDark ? 'bg-white/5 border-white/10 hover:border-cyan-400/40' : 'bg-gray-50 border-gray-200 hover:border-blue-400'}`}>

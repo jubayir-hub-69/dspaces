@@ -1,8 +1,8 @@
 import { EventEmitter } from "events";
 import { VoiceAgent } from "@dtelecom/agents-js";
-import { Room, RemoteAudioTrack } from "@dtelecom/server-sdk-node";
+import { DataPacket_Kind, Room, RemoteAudioTrack } from "@dtelecom/server-sdk-node";
 import { geminiTranscribeAudio, pcm16ToWav } from "./gemini";
-import { AGENT_IDENTITY, createAccessToken, getDtelecomCredentials, getRoomService, TRANSCRIPT_TOPIC } from "./dtelecom";
+import { AGENT_IDENTITY, createAccessToken, getRoomService, TRANSCRIPT_TOPIC } from "./dtelecom";
 import { appendTranscript, getRoomState, updateRoomState } from "./room-store";
 import type { TranscriptSegment } from "./types";
 
@@ -13,12 +13,36 @@ type AgentHandle = {
   stop: () => Promise<void>;
 };
 
-async function publishTranscript(roomName: string, serverUrl: string | undefined, segment: TranscriptSegment) {
+type DataPublisher = {
+  publishData: (data: Uint8Array, options?: { topic?: string; kind?: DataPacket_Kind }) => Promise<void>;
+};
+
+async function publishTranscript(
+  roomName: string,
+  serverUrl: string | undefined,
+  segment: TranscriptSegment,
+  publisher?: DataPublisher | null
+) {
   await appendTranscript(roomName, segment);
-  const payload = new TextEncoder().encode(JSON.stringify({ type: "transcript", ...segment }));
+  const payload = new TextEncoder().encode(
+    JSON.stringify({
+      type: "transcript",
+      speaker: segment.speaker,
+      text: segment.text,
+      at: segment.at,
+      isFinal: segment.isFinal !== false,
+    })
+  );
+  if (publisher) {
+    try {
+      await publisher.publishData(payload, { topic: TRANSCRIPT_TOPIC, kind: DataPacket_Kind.RELIABLE });
+    } catch {
+      // Fall through to the RoomService broadcast.
+    }
+  }
   try {
     const svc = await getRoomService(serverUrl);
-    await svc.sendData(roomName, payload, 0, { topic: TRANSCRIPT_TOPIC });
+    await svc.sendData(roomName, payload, DataPacket_Kind.RELIABLE, { topic: TRANSCRIPT_TOPIC });
   } catch {
     // KV already holds the transcript if the data broadcast misses a node.
   }
@@ -87,7 +111,21 @@ async function startVoiceAgent(options: {
   signal: AbortSignal;
   geminiKey: string;
 }): Promise<AgentHandle> {
-  const { apiKey, apiSecret } = getDtelecomCredentials();
+  const at = await createAccessToken({
+    identity: AGENT_IDENTITY,
+    name: "dSpaces AI Agent",
+    metadata: JSON.stringify({ role: "guest", isCoHost: false, agent: true }),
+    room: options.roomName,
+    canPublish: true,
+    canPublishData: true,
+    hidden: true,
+  });
+  const token = at.toJwt();
+  const wsUrl = await at.getWsUrl();
+  if (!wsUrl) {
+    throw new Error("dTelecom could not assign a video node for the AI agent.");
+  }
+
   const agent = new VoiceAgent({
     stt: new GeminiSTT(options.geminiKey, options.language),
     llm: new SilentLLM(),
@@ -99,20 +137,25 @@ async function startVoiceAgent(options: {
   agent.on("transcription", (result: { text?: string; isFinal?: boolean; speaker?: string }) => {
     const text = result.text?.trim();
     if (!text || result.isFinal === false) return;
-    void publishTranscript(options.roomName, undefined, {
-      speaker: result.speaker || "Participant",
-      text,
-      at: Date.now(),
-      isFinal: true,
-    });
+    void publishTranscript(
+      options.roomName,
+      wsUrl,
+      {
+        speaker: result.speaker || "Participant",
+        text,
+        at: Date.now(),
+        isFinal: true,
+      },
+      agent.room?.localParticipant
+    );
   });
 
   await agent.start({
     room: options.roomName,
     identity: AGENT_IDENTITY,
     name: "dSpaces AI Agent",
-    apiKey,
-    apiSecret,
+    token,
+    wsUrl,
   });
 
   const stop = async () => {
@@ -143,7 +186,7 @@ async function startRoomAgent(options: {
     room: options.roomName,
     canPublish: false,
     canPublishData: true,
-    hidden: false,
+    hidden: true,
   });
   const token = at.toJwt();
   const wsUrl = await at.getWsUrl();
@@ -163,12 +206,17 @@ async function startRoomAgent(options: {
     try {
       const text = (await geminiTranscribeAudio(options.geminiKey, pcm16ToWav(buf, SAMPLE_RATE), options.language)).trim();
       if (!text || stopped) return;
-      await publishTranscript(options.roomName, wsUrl, {
-        speaker,
-        text,
-        at: Date.now(),
-        isFinal: true,
-      });
+      await publishTranscript(
+        options.roomName,
+        wsUrl,
+        {
+          speaker,
+          text,
+          at: Date.now(),
+          isFinal: true,
+        },
+        room.localParticipant
+      );
     } catch {
       // Keep the agent alive if a single STT request fails.
     }

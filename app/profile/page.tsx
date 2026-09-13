@@ -3,8 +3,10 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useWallet } from "@solana/wallet-adapter-react";
+import { useSiwsAuth } from "../../components/WalletProvider";
 import dynamic from "next/dynamic";
 import { AboutDspacesButton, AboutDspacesModal } from "../../components/AboutDspacesModal";
+import { SolanaNetworkBadge } from "../../components/SolanaNetworkBadge";
 import {
   checkEmailAvailable,
   checkWalletAvailable,
@@ -30,6 +32,7 @@ const WalletMultiButton = dynamic(
 export default function ProfilePage() {
   const router = useRouter();
   const { connected, publicKey, disconnect } = useWallet();
+  const { authenticated } = useSiwsAuth();
 
   const [myAcc, setMyAcc] = useState<any>(null);
   const [userName, setUserName] = useState("User");
@@ -119,7 +122,7 @@ export default function ProfilePage() {
   }, [router]);
 
   useEffect(() => {
-    if (!connected || !publicKey || !myAcc) return;
+    if (!connected || !publicKey || !myAcc || !authenticated) return;
     const walletStr = publicKey.toString();
 
     if (myAcc.wallet) {
@@ -156,7 +159,7 @@ export default function ProfilePage() {
       showToast("Wallet linked successfully!");
     });
     return () => { cancelled = true; };
-  }, [connected, publicKey, myAcc, disconnect]);
+  }, [authenticated, connected, publicKey, myAcc, disconnect]);
 
   // FIX: This is the function that was mismatched in the button click
   const handleSendLinkOTP = async () => {
@@ -375,8 +378,16 @@ export default function ProfilePage() {
                   <span className="text-sm font-semibold text-gray-200 truncate max-w-[100px]">{myAcc.wallet || "Not Linked"}</span>
                 </div>
               </div>
-              {myAcc.wallet ? <span className="text-[#00ff88] text-xs font-bold flex items-center gap-1"><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg> Linked</span> : (
-                 <div className="scale-[0.8] origin-right"><WalletMultiButton className="!bg-purple-600 hover:!bg-purple-500 !rounded-xl" /></div>
+              {myAcc.wallet ? (
+                <div className="flex flex-col items-end gap-1">
+                  <span className="text-[#00ff88] text-xs font-bold flex items-center gap-1"><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg> Linked</span>
+                  <SolanaNetworkBadge compact />
+                </div>
+              ) : (
+                 <div className="flex flex-col items-end gap-1">
+                   <div className="scale-[0.8] origin-right"><WalletMultiButton className="!bg-purple-600 hover:!bg-purple-500 !rounded-xl" /></div>
+                   <SolanaNetworkBadge compact />
+                 </div>
               )}
             </div>
 

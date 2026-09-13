@@ -319,7 +319,7 @@ const RoomCallStage = memo(function RoomCallStage({
 }: RoomCallStageProps) {
   const publishOnJoin = !isImportant || isHost;
   return (
-    <div className="flex-1 w-full min-h-0 relative z-10 bg-transparent overflow-hidden flex flex-col">
+    <div className="flex-1 w-full h-full min-h-0 relative z-10 bg-transparent overflow-hidden flex flex-col">
       <LiveKitRoom
         video={false}
         audio={publishOnJoin}
@@ -327,7 +327,7 @@ const RoomCallStage = memo(function RoomCallStage({
         serverUrl={serverUrl}
         connectOptions={isImportant ? { autoSubscribe: true } : undefined}
         data-lk-theme="default"
-        className="h-full min-h-0 overflow-hidden"
+        className="lk-room-container h-full w-full min-h-0 overflow-hidden flex flex-col flex-1"
         style={LIVEKIT_ROOM_STYLE}
         onConnected={onConnected}
         onDisconnected={onDisconnected}
@@ -354,7 +354,7 @@ const RoomCallStage = memo(function RoomCallStage({
         <ScreenShareGuard showDynamicToast={showDynamicToast} />
         <KickedListener showDynamicToast={showDynamicToast} />
         <ParticipantAvatarSync fallbackAvatars={avatars} />
-        {onTranscript && <TranscriptListener onSegment={onTranscript} />}
+        {onTranscript && <TranscriptListener onSegment={onTranscript} roomId={roomId} />}
         {isImportant && (
           <ImportantMeetingControls
             isHost={isHost}
@@ -589,6 +589,49 @@ function RoomContent() {
     setTranscript(fullText || `${segment.speaker}: ${segment.text}`);
   }, []);
 
+  useEffect(() => {
+    if (!roomId || !token) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const snap = await fetch(`/api/transcription-agent?room=${encodeURIComponent(roomId)}`);
+        const body = await snap.json();
+        if (cancelled) return;
+        if (body.transcript) {
+          fullTranscriptRef.current = body.transcript;
+          setTranscript(body.transcript);
+        }
+        if (body.agentActive) {
+          isRecordingRef.current = true;
+          setIsRecording(true);
+        }
+      } catch {
+        // Existing transcript is optional until the agent starts.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [roomId, token]);
+
+  useEffect(() => {
+    if (!isRecording || !roomId) return;
+    const poll = setInterval(async () => {
+      if (!isRecordingRef.current) return;
+      try {
+        const snap = await fetch(`/api/transcription-agent?room=${encodeURIComponent(roomId)}`);
+        const body = await snap.json();
+        if (body.transcript) {
+          fullTranscriptRef.current = body.transcript;
+          setTranscript(body.transcript);
+        }
+      } catch {
+        // Polling is a fallback while the agent writes to KV / data channel.
+      }
+    }, 2000);
+    return () => clearInterval(poll);
+  }, [isRecording, roomId]);
+
   const handleStartAI = async () => {
     if (!token) {
       showDynamicToast("Wait for the room to connect before starting transcription.");
@@ -656,22 +699,6 @@ function RoomContent() {
           fullTranscriptRef.current = data.transcript;
           setTranscript(data.transcript);
         }
-        const poll = setInterval(async () => {
-          if (!isRecordingRef.current) {
-            clearInterval(poll);
-            return;
-          }
-          try {
-            const snap = await fetch(`/api/transcription-agent?room=${encodeURIComponent(roomId)}`);
-            const body = await snap.json();
-            if (body.transcript) {
-              fullTranscriptRef.current = body.transcript;
-              setTranscript(body.transcript);
-            }
-          } catch {
-            // Polling is a fallback while the agent writes to KV.
-          }
-        }, 2500);
       }
     } catch (error: unknown) {
       if ((error as { name?: string })?.name === "AbortError") return;

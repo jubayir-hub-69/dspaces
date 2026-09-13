@@ -48,6 +48,55 @@ body {
 .wallet-adapter-modal-title {
   color: #fff !important;
   font-weight: 800 !important;
+  display: flex !important;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.wallet-adapter-modal-title::after {
+  content: "Mainnet";
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0.65rem 0.2rem 1.15rem;
+  border-radius: 999px;
+  border: 1px solid rgba(52, 211, 153, 0.35);
+  background: rgba(16, 185, 129, 0.12);
+  color: #6ee7b7;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  box-shadow: inset 8px 0 0 -6px #34d399;
+}
+
+.wallet-adapter-modal-title:has([data-dspaces-mainnet])::after {
+  content: none;
+  display: none;
+}
+
+.dspaces-wallet-mainnet {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0.65rem;
+  border-radius: 999px;
+  border: 1px solid rgba(52, 211, 153, 0.35);
+  background: rgba(16, 185, 129, 0.12);
+  color: #6ee7b7;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.dspaces-wallet-mainnet-dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 999px;
+  background: #34d399;
+  box-shadow: 0 0 8px rgba(52, 211, 153, 0.8);
 }
 
 .wallet-adapter-modal-list {

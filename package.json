@@ -22,6 +22,8 @@
     "@solana/wallet-adapter-react-ui": "^0.9.35",
     "@solana/wallet-adapter-solflare": "^0.6.33",
     "@solana/wallet-adapter-wallets": "^0.19.38",
+    "@solana/wallet-standard-features": "^1.3.0",
+    "@solana/wallet-standard-util": "^1.1.2",
     "@solana/web3.js": "^1.98.4",
     "@vercel/kv": "^1.0.0",
     "long": "^5.2.3",

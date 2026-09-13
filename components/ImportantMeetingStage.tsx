@@ -16,7 +16,9 @@ import {
 import { RoomEvent, Track } from "@dtelecom/livekit-client";
 import { parseImportantMeta, type ImportantRole } from "../lib/important-meetings";
 import { kickParticipant, muteParticipant, updateStageParticipant } from "../lib/moderation-client";
-import { isHostRole, isManagerRole } from "../lib/types";
+import { isAiAgent, isHostRole, isManagerRole } from "../lib/types";
+import { IdentifiedChatEntry } from "./IdentifiedChatEntry";
+import { usePersistentChat } from "./PersistentChat";
 
 function subscribePublication(pub: { setSubscribed?: (v: boolean) => void; isSubscribed?: boolean }) {
   if (typeof pub?.setSubscribed !== "function") return;
@@ -300,11 +302,12 @@ export function ImportantMeetingStage({
   showDynamicToast: (msg: string) => void;
 }) {
   const room = useRoomContext();
-  const participants = useParticipants();
+  const participants = useParticipants().filter((p) => !isAiAgent(p));
   const layoutContext = useCreateLayoutContext({
     initialWidgetState: { showChat: false, unreadMessages: 0, unreadTranscriptions: 0 },
   });
   const [showChat, setShowChat] = useState(false);
+  const chatContext = usePersistentChat(roomId, token);
 
   const subscribeAll = useCallback(() => {
     if (!room) return;
@@ -355,7 +358,9 @@ export function ImportantMeetingStage({
             </div>
             <ControlBar controls={{ chat: true }} isAdmin={isHost} />
           </div>
-          <Chat style={{ display: showChat ? "flex" : "none" }} />
+          <Chat chatContext={chatContext} style={{ display: showChat ? "flex" : "none" }}>
+            <IdentifiedChatEntry />
+          </Chat>
         </LayoutContextProvider>
         <RoomAudioRenderer />
       </div>

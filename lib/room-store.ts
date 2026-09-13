@@ -1,5 +1,5 @@
 import { isKvConfigured, kvGet, kvSet } from "./kv";
-import type { MeetingRole, RoomMode, RoomState, TranscriptSegment } from "./types";
+import type { MeetingRole, RoomChatMessage, RoomMode, RoomState, TranscriptSegment } from "./types";
 
 const AVATARS_KEY = "dspaces_avatars";
 
@@ -16,6 +16,7 @@ function emptyRoom(hostId: string, mode: RoomMode): RoomState {
     avatars: {},
     transcript: "",
     transcriptSegments: [],
+    chatMessages: [],
     agentActive: false,
     createdAt: Date.now(),
   };
@@ -96,6 +97,39 @@ export async function appendTranscript(room: string, segment: TranscriptSegment)
   const transcript = segment.isFinal
     ? `${current.transcript} ${line}`.trim()
     : current.transcript;
-  const segments = [...current.transcriptSegments, segment].slice(-400);
+  const segments = [...(current.transcriptSegments || []), segment].slice(-400);
   return saveRoomState(room, { ...current, transcript, transcriptSegments: segments });
+}
+
+const MAX_CHAT_MESSAGES = 200;
+
+export function chatMessageKey(msg: Pick<RoomChatMessage, "identity" | "message" | "timestamp">) {
+  return `${msg.timestamp}:${msg.identity}:${msg.message}`;
+}
+
+export async function getRoomChat(room: string): Promise<RoomChatMessage[]> {
+  const state = await getRoomState(room);
+  return state?.chatMessages || [];
+}
+
+export async function appendChatMessage(
+  room: string,
+  incoming: Omit<RoomChatMessage, "id"> & { id?: string }
+): Promise<RoomChatMessage[]> {
+  const state = await updateRoomState(room, (current) => {
+    const existing = current.chatMessages || [];
+    const key = chatMessageKey(incoming);
+    if (existing.some((msg) => chatMessageKey(msg) === key || (incoming.id && msg.id === incoming.id))) {
+      return current;
+    }
+    const next: RoomChatMessage = {
+      id: incoming.id || `${incoming.timestamp}-${incoming.identity}`,
+      identity: incoming.identity,
+      name: incoming.name || incoming.identity,
+      message: incoming.message,
+      timestamp: incoming.timestamp,
+    };
+    return { ...current, chatMessages: [...existing, next].slice(-MAX_CHAT_MESSAGES) };
+  });
+  return state.chatMessages || [];
 }

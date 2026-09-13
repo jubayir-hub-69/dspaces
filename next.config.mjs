@@ -28,6 +28,8 @@ const nextConfig = {
     "@solana/wallet-adapter-phantom",
     "@solana/wallet-adapter-solflare",
     "@solana/wallet-adapter-backpack",
+    "@solana/wallet-standard-features",
+    "@solana/wallet-standard-util",
   ],
   webpack: (config, { isServer }) => {
     if (!isServer) {

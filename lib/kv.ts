@@ -34,17 +34,27 @@ export async function kvGet<T>(key: string): Promise<T | null> {
   return (parsed as T) ?? null;
 }
 
-export async function kvSet(key: string, value: unknown): Promise<void> {
+export async function kvSet(key: string, value: unknown, ttlSeconds?: number): Promise<void> {
   const kv = kvConfig();
   if (!kv) throw new Error("DB not connected");
   const encoded = encodeURIComponent(JSON.stringify(value));
-  const res = await fetch(`${kv.url}/set/${encodeURIComponent(key)}/${encoded}`, {
+  const ttlPath = ttlSeconds && ttlSeconds > 0 ? `/EX/${ttlSeconds}` : "";
+  const res = await fetch(`${kv.url}/set/${encodeURIComponent(key)}/${encoded}${ttlPath}`, {
     method: "POST",
     headers: { Authorization: `Bearer ${kv.token}` },
   });
   if (!res.ok) {
     throw new Error(`Failed to persist ${key}`);
   }
+}
+
+export async function kvDel(key: string): Promise<void> {
+  const kv = kvConfig();
+  if (!kv) return;
+  await fetch(`${kv.url}/del/${encodeURIComponent(key)}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${kv.token}` },
+  });
 }
 
 export async function kvGetJson<T>(key: string, fallback: T): Promise<T> {
