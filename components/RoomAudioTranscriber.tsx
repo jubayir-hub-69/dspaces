@@ -6,9 +6,16 @@ import { RoomEvent, Track } from "@dtelecom/livekit-client";
 import { isAiAgent, type TranscriptSegment } from "../lib/types";
 
 const TARGET_RATE = 16000;
-const FLUSH_MS = 2200;
-const MIN_PCM_BYTES = TARGET_RATE * 2;
-const ENERGY_THRESHOLD = 0.008;
+const TICK_MS = 280;
+const FRAME_SAMPLES = 320;
+const OVERLAP_SAMPLES = Math.floor(TARGET_RATE * 0.3);
+const PREROLL_SAMPLES = Math.floor(TARGET_RATE * 0.25);
+const MAX_SEND_SAMPLES = Math.floor(TARGET_RATE * 1.8);
+const MIN_SPEECH_SAMPLES = Math.floor(TARGET_RATE * 0.28);
+const SILENCE_END_SAMPLES = Math.floor(TARGET_RATE * 0.5);
+const MAX_SILENCE_KEEP = Math.floor(TARGET_RATE * 0.35);
+const SPEECH_RMS = 0.006;
+const SILENCE_RMS = 0.0035;
 
 type Graph = {
   ctx: AudioContext;
@@ -18,6 +25,14 @@ type Graph = {
   cloned: MediaStreamTrack;
   ownsClone: boolean;
   el: HTMLAudioElement;
+  onState: () => void;
+};
+
+type SpeakerCapture = {
+  frames: Int16Array[];
+  samples: number;
+  overlap: Int16Array;
+  sending: boolean;
 };
 
 function int16ToBase64(pcm: Int16Array): string {
@@ -30,14 +45,58 @@ function int16ToBase64(pcm: Int16Array): string {
   return btoa(binary);
 }
 
-function pcmEnergy(buf: Int16Array) {
-  if (!buf.length) return 0;
-  let sum = 0;
-  for (let i = 0; i < buf.length; i += 8) {
-    const s = buf[i] / 32768;
-    sum += s * s;
+function concatFrames(frames: Int16Array[], start = 0, end?: number): Int16Array {
+  const last = end ?? frames.length;
+  let len = 0;
+  for (let i = start; i < last; i++) len += frames[i].length;
+  const out = new Int16Array(len);
+  let offset = 0;
+  for (let i = start; i < last; i++) {
+    out.set(frames[i], offset);
+    offset += frames[i].length;
   }
-  return Math.sqrt(sum / Math.ceil(buf.length / 8));
+  return out;
+}
+
+function concatPcm(parts: Int16Array[]): Int16Array {
+  const nonempty = parts.filter((part) => part.length > 0);
+  if (nonempty.length === 0) return new Int16Array(0);
+  if (nonempty.length === 1) return nonempty[0];
+  return concatFrames(nonempty);
+}
+
+function slicePcm(pcm: Int16Array, start: number, end: number): Int16Array {
+  const from = Math.max(0, start);
+  const to = Math.min(pcm.length, end);
+  if (to <= from) return new Int16Array(0);
+  return pcm.subarray(from, to);
+}
+
+function frameRms(pcm: Int16Array, offset: number, length: number): number {
+  if (length <= 0) return 0;
+  let sum = 0;
+  let count = 0;
+  const last = Math.min(pcm.length, offset + length);
+  for (let i = offset; i < last; i += 4) {
+    const s = pcm[i] / 32768;
+    sum += s * s;
+    count += 1;
+  }
+  return count ? Math.sqrt(sum / count) : 0;
+}
+
+function speechBounds(pcm: Int16Array): { start: number; end: number } | null {
+  let first = -1;
+  let last = -1;
+  for (let i = 0; i < pcm.length; i += FRAME_SAMPLES) {
+    const len = Math.min(FRAME_SAMPLES, pcm.length - i);
+    if (frameRms(pcm, i, len) >= SPEECH_RMS) {
+      if (first < 0) first = i;
+      last = i + len;
+    }
+  }
+  if (first < 0) return null;
+  return { start: first, end: last };
 }
 
 function downsampleTo16k(input: Float32Array, inputRate: number): Int16Array {
@@ -75,6 +134,43 @@ function audioPublications(participant: {
   return pubs;
 }
 
+function ensureSpeaker(speakers: Map<string, SpeakerCapture>, identity: string): SpeakerCapture {
+  let state = speakers.get(identity);
+  if (!state) {
+    state = { frames: [], samples: 0, overlap: new Int16Array(0), sending: false };
+    speakers.set(identity, state);
+  }
+  return state;
+}
+
+function takeFrames(state: SpeakerCapture, sampleCount: number): Int16Array {
+  const take = Math.min(sampleCount, state.samples);
+  if (take <= 0) return new Int16Array(0);
+  const out = new Int16Array(take);
+  let copied = 0;
+  while (copied < take && state.frames.length) {
+    const frame = state.frames[0];
+    const need = take - copied;
+    if (frame.length <= need) {
+      out.set(frame, copied);
+      copied += frame.length;
+      state.frames.shift();
+    } else {
+      out.set(frame.subarray(0, need), copied);
+      state.frames[0] = frame.subarray(need);
+      copied += need;
+    }
+  }
+  state.samples -= copied;
+  return copied === take ? out : out.subarray(0, copied);
+}
+
+function keepTail(state: SpeakerCapture, keepSamples: number) {
+  if (state.samples <= keepSamples) return;
+  const drop = state.samples - keepSamples;
+  takeFrames(state, drop);
+}
+
 export function RoomAudioTranscriber({
   active,
   roomId,
@@ -99,27 +195,45 @@ export function RoomAudioTranscriber({
   useEffect(() => {
     if (!active || !room || !roomId || !token) return;
     let stopped = false;
-    const buffers = new Map<string, Int16Array>();
+    const speakers = new Map<string, SpeakerCapture>();
     const graphs = new Map<string, Graph>();
-    let callbacks = 0;
+    let tickTimer = 0;
+    let watchdogTimer = 0;
 
     const appendPcm = (identity: string, chunk: Int16Array) => {
-      const prev = buffers.get(identity);
-      if (!prev) {
-        buffers.set(identity, chunk);
-        return;
+      if (!chunk.length) return;
+      const state = ensureSpeaker(speakers, identity);
+      state.frames.push(chunk);
+      state.samples += chunk.length;
+    };
+
+    const teardownGraph = (key: string) => {
+      const graph = graphs.get(key);
+      if (!graph) return;
+      graphs.delete(key);
+      try {
+        graph.ctx.removeEventListener("statechange", graph.onState);
+        graph.node.disconnect();
+        graph.src.disconnect();
+        graph.silent.disconnect();
+        void graph.ctx.close();
+        graph.el.pause();
+        graph.el.srcObject = null;
+        if (graph.ownsClone && graph.cloned.readyState === "live") graph.cloned.stop();
+      } catch {
+        // Ignore teardown races.
       }
-      const next = new Int16Array(prev.length + chunk.length);
-      next.set(prev);
-      next.set(chunk, prev.length);
-      buffers.set(identity, next);
     };
 
     const attachTrack = (identity: string, media?: MediaStreamTrack | null) => {
       if (stopped || !media || media.kind !== "audio" || identity === "ai_agent") return;
       if (media.readyState === "ended") return;
       const key = `${identity}:${media.id}`;
-      if (graphs.has(key)) return;
+      const existing = graphs.get(key);
+      if (existing) {
+        if (existing.ctx.state !== "running") void existing.ctx.resume();
+        return;
+      }
 
       let cloned: MediaStreamTrack;
       let ownsClone = true;
@@ -145,35 +259,39 @@ export function RoomAudioTranscriber({
       const el = new Audio();
       el.muted = true;
       el.autoplay = true;
+      el.playsInline = true;
       el.srcObject = stream;
-      void el.play().catch(() => {
-        // Autoplay can fail; the AudioContext graph is the real capture path.
-      });
+      void el.play().catch(() => undefined);
 
       node.onaudioprocess = (event) => {
         if (stopped) return;
-        callbacks += 1;
         const input = event.inputBuffer.getChannelData(0);
         appendPcm(identity, downsampleTo16k(input, ctx.sampleRate || event.inputBuffer.sampleRate));
       };
       src.connect(node);
       node.connect(silent);
       silent.connect(ctx.destination);
+
+      const onState = () => {
+        if (!stopped && ctx.state !== "running") void ctx.resume();
+      };
+      ctx.addEventListener("statechange", onState);
       void ctx.resume().then(() => {
         console.log("[STT] attached audio", {
           identity,
           contextState: ctx.state,
           sampleRate: ctx.sampleRate,
           trackState: cloned.readyState,
-          muted: cloned.muted,
-          enabled: cloned.enabled,
         });
       });
-      graphs.set(key, { ctx, node, src, silent, cloned, ownsClone, el });
+      graphs.set(key, { ctx, node, src, silent, cloned, ownsClone, el, onState });
     };
 
     const scan = () => {
       if (stopped || !room) return;
+      for (const [key, graph] of Array.from(graphs.entries())) {
+        if (graph.cloned.readyState === "ended") teardownGraph(key);
+      }
       const everyone = [room.localParticipant, ...Array.from(room.participants.values())];
       everyone.forEach((participant) => {
         if (isAiAgent(participant)) return;
@@ -184,67 +302,118 @@ export function RoomAudioTranscriber({
       });
     };
 
-    const flush = async () => {
-      if (stopped) return;
-      const pending = Array.from(buffers.entries());
-      buffers.clear();
-      if (!pending.length && callbacks === 0) {
-        console.warn("[STT] flush skipped: no audio callbacks yet", {
-          graphs: graphs.size,
-          contextStates: Array.from(graphs.values()).map((g) => g.ctx.state),
+    const sendChunk = async (speaker: string, state: SpeakerCapture, pcm: Int16Array) => {
+      if (!pcm.length) {
+        state.sending = false;
+        return;
+      }
+      try {
+        console.log("[STT] sending chunk", { speaker, samples: pcm.length, ms: Math.round((pcm.length / TARGET_RATE) * 1000) });
+        const res = await fetch("/api/transcribe-chunk", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            room: roomId,
+            speaker,
+            language: languageRef.current,
+            serverUrl,
+            sampleRate: TARGET_RATE,
+            pcmBase64: int16ToBase64(pcm),
+          }),
         });
+        const data = (await res.json().catch(() => null)) as { text?: string; transcript?: string; error?: string } | null;
+        if (!res.ok && !data) {
+          console.error("[STT] transcribe-chunk failed", res.status);
+          return;
+        }
+        if (data?.text) {
+          console.log("[STT] transcript chunk", { speaker, text: data.text });
+          onSegmentRef.current?.(
+            { speaker, text: data.text, at: Date.now(), isFinal: true },
+            data.transcript || ""
+          );
+        }
+      } catch (error) {
+        console.error("[STT] transcribe-chunk request error", error);
+      } finally {
+        state.sending = false;
       }
-      for (const [speaker, pcm] of pending) {
-        if (pcm.byteLength < MIN_PCM_BYTES) {
-          buffers.set(speaker, pcm);
-          continue;
+    };
+
+    const flushReady = () => {
+      speakers.forEach((state, speaker) => {
+        if (state.sending || state.samples <= 0) return;
+
+        const captured = concatFrames(state.frames);
+        const bounds = speechBounds(captured);
+        if (!bounds) {
+          keepTail(state, MAX_SILENCE_KEEP);
+          return;
         }
-        const energy = pcmEnergy(pcm);
-        if (energy < ENERGY_THRESHOLD) {
-          console.log("[STT] skipping quiet chunk", { speaker, bytes: pcm.byteLength, energy });
-          continue;
+
+        const trailingSilence = captured.length - bounds.end;
+        const speechLen = bounds.end - bounds.start;
+        const hitMax = captured.length >= MAX_SEND_SAMPLES + PREROLL_SAMPLES;
+        const utteranceEnded = trailingSilence >= SILENCE_END_SAMPLES;
+        if (!hitMax && !utteranceEnded) return;
+        if (speechLen < MIN_SPEECH_SAMPLES && !hitMax) return;
+
+        const start = Math.max(0, bounds.start - PREROLL_SAMPLES);
+        const end = hitMax && !utteranceEnded
+          ? Math.min(captured.length, Math.max(start + MIN_SPEECH_SAMPLES, start + MAX_SEND_SAMPLES))
+          : Math.min(captured.length, bounds.end);
+        const slice = slicePcm(captured, start, end);
+        if (slice.length < MIN_SPEECH_SAMPLES) return;
+
+        const prevOverlap = state.overlap;
+        takeFrames(state, end);
+        state.overlap = slicePcm(slice, Math.max(0, slice.length - OVERLAP_SAMPLES), slice.length).slice();
+        const payload = concatPcm([prevOverlap, slice]);
+        if (frameRms(payload, 0, payload.length) < SILENCE_RMS) {
+          state.sending = false;
+          return;
         }
-        try {
-          console.log("[STT] sending chunk", { speaker, bytes: pcm.byteLength, energy, language: languageRef.current });
-          const res = await fetch("/api/transcribe-chunk", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify({
-              room: roomId,
-              speaker,
-              language: languageRef.current,
-              serverUrl,
-              sampleRate: TARGET_RATE,
-              pcmBase64: int16ToBase64(pcm),
-            }),
-          });
-          const data = (await res.json().catch(() => null)) as { text?: string; transcript?: string; error?: string } | null;
-          if (!res.ok) {
-            console.error("[STT] transcribe-chunk failed", res.status, data?.error || data);
-            continue;
-          }
-          if (data?.text) {
-            console.log("[STT] transcript chunk", { speaker, text: data.text });
-            const segment = { speaker, text: data.text, at: Date.now(), isFinal: true };
-            onSegmentRef.current?.(segment, data.transcript || "");
-          } else {
-            console.log("[STT] transcribe-chunk returned no speech", { speaker });
-          }
-        } catch (error) {
-          console.error("[STT] transcribe-chunk request error", error);
-        }
+        state.sending = true;
+        void sendChunk(speaker, state, payload.slice());
+      });
+    };
+
+    const tick = () => {
+      if (stopped) return;
+      try {
+        flushReady();
+      } catch (error) {
+        console.error("[STT] flush tick failed; capture continues", error);
       }
+      if (!stopped) tickTimer = window.setTimeout(tick, TICK_MS);
+    };
+
+    const onVisibility = () => {
+      if (document.hidden || stopped) return;
+      graphs.forEach((graph) => {
+        if (graph.ctx.state !== "running") void graph.ctx.resume();
+        void graph.el.play().catch(() => undefined);
+      });
     };
 
     console.log("[STT] starting client audio capture", { roomId });
     scan();
-    const scanTimer = setInterval(scan, 1500);
-    const flushTimer = setInterval(() => {
-      void flush();
-    }, FLUSH_MS);
+    tick();
+    const scanTimer = window.setInterval(scan, 1500);
+    watchdogTimer = window.setInterval(() => {
+      if (stopped) return;
+      graphs.forEach((graph) => {
+        if (graph.ctx.state !== "running") {
+          console.log("[STT] resuming AudioContext", graph.ctx.state);
+          void graph.ctx.resume();
+        }
+        if (graph.el.paused) void graph.el.play().catch(() => undefined);
+      });
+    }, 1000);
+    document.addEventListener("visibilitychange", onVisibility);
 
     const onTrack = () => scan();
     room.on(RoomEvent.TrackSubscribed, onTrack);
@@ -254,27 +423,16 @@ export function RoomAudioTranscriber({
 
     return () => {
       stopped = true;
-      clearInterval(scanTimer);
-      clearInterval(flushTimer);
+      window.clearTimeout(tickTimer);
+      window.clearInterval(scanTimer);
+      window.clearInterval(watchdogTimer);
+      document.removeEventListener("visibilitychange", onVisibility);
       room.off(RoomEvent.TrackSubscribed, onTrack);
       room.off(RoomEvent.TrackPublished, onTrack);
       room.off(RoomEvent.ParticipantConnected, onTrack);
       room.off(RoomEvent.LocalTrackPublished, onTrack);
-      void flush();
-      graphs.forEach((graph) => {
-        try {
-          graph.node.disconnect();
-          graph.src.disconnect();
-          graph.silent.disconnect();
-          void graph.ctx.close();
-          graph.el.pause();
-          graph.el.srcObject = null;
-          if (graph.ownsClone && graph.cloned.readyState === "live") graph.cloned.stop();
-        } catch {
-          // Ignore teardown races.
-        }
-      });
-      graphs.clear();
+      Array.from(graphs.keys()).forEach(teardownGraph);
+      speakers.clear();
       console.log("[STT] stopped client audio capture");
     };
   }, [active, room, roomId, serverUrl, token]);

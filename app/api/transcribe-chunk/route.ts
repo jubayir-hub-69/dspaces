@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import { bearerToken, getRoomService, sanitizeMediaUrl, verifyRoomParticipant } from "../../../lib/dtelecom";
-import { geminiTranscribeAudio, pcm16ToWav } from "../../../lib/gemini";
+import { geminiTranscribeAudio, pcm16ToWav, pcmRms } from "../../../lib/gemini";
 import { appendTranscript } from "../../../lib/room-store";
 import { TRANSCRIPT_TOPIC } from "../../../lib/types";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+
+const MIN_PCM_BYTES = 3200;
+const SILENCE_RMS = 0.0015;
 
 export async function POST(req: Request) {
   try {
@@ -34,16 +37,28 @@ export async function POST(req: Request) {
     }
 
     const pcm = Buffer.from(pcmBase64, "base64");
-    if (pcm.length < 16000) {
+    if (pcm.length < MIN_PCM_BYTES) {
+      return NextResponse.json({ success: true, text: "" });
+    }
+
+    const energy = pcmRms(pcm);
+    if (energy < SILENCE_RMS) {
       return NextResponse.json({ success: true, text: "" });
     }
 
     const sampleRate = body.sampleRate === 48000 || body.sampleRate === 16000 ? body.sampleRate : 16000;
     const speaker = (body.speaker || caller.identity || "Participant").trim();
-    console.log("[STT] transcribe-chunk received", { room, speaker, bytes: pcm.length, sampleRate, language: body.language });
+    console.log("[STT] transcribe-chunk received", {
+      room,
+      speaker,
+      bytes: pcm.length,
+      sampleRate,
+      energy: Number(energy.toFixed(4)),
+      language: body.language,
+    });
+
     const text = (await geminiTranscribeAudio(apiKey, pcm16ToWav(pcm, sampleRate), body.language)).trim();
     if (!text) {
-      console.log("[STT] transcribe-chunk empty transcript", { room, speaker });
       return NextResponse.json({ success: true, text: "" });
     }
 
@@ -71,6 +86,6 @@ export async function POST(req: Request) {
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Transcription failed";
     console.error("[STT] transcribe-chunk error", message);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ success: true, text: "", error: message });
   }
 }

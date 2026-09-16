@@ -116,6 +116,18 @@ function joinUtterance(prev: string, next: string) {
   if (!left) return right;
   if (!right) return left;
   if (left.endsWith(right) || left.endsWith(`${right}.`)) return left;
+  if (right.startsWith(left)) return right;
+
+  const leftWords = left.split(/\s+/);
+  const rightWords = right.split(/\s+/);
+  const max = Math.min(8, leftWords.length, rightWords.length);
+  for (let n = max; n >= 1; n--) {
+    const suffix = leftWords.slice(-n).join(" ").toLowerCase();
+    const prefix = rightWords.slice(0, n).join(" ").toLowerCase();
+    if (suffix === prefix) {
+      return `${leftWords.join(" ")} ${rightWords.slice(n).join(" ")}`.replace(/\s+/g, " ").trim();
+    }
+  }
   return `${left} ${right}`.replace(/\s+/g, " ").trim();
 }
 

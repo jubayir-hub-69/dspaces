@@ -206,35 +206,67 @@ export function pcm16ToWav(pcm: Buffer, sampleRate = 16000): Buffer {
   return Buffer.concat([header, pcm]);
 }
 
-export async function geminiTranscribeAudio(apiKey: string, wav: Buffer, languageHint?: string): Promise<string> {
-  const models = await selectTranscribeModels(apiKey);
-  const languageRule =
-    languageHint && languageHint !== "Auto"
-      ? `Prefer transcribing in ${languageHint}.`
-      : "Automatically detect the spoken language. Use native script (never romanize Bengali or Hindi).";
-
-  const genData = await geminiGenerateContent(apiKey, models, {
-    contents: [
-      {
-        parts: [
-          {
-            text: `Transcribe this meeting audio. ${languageRule} Return only the spoken words. If there is no speech, return an empty string.`,
-          },
-          {
-            inlineData: {
-              mimeType: "audio/wav",
-              data: wav.toString("base64"),
-            },
-          },
-        ],
-      },
-    ],
-  });
-  const text = extractGeminiText(genData);
-  if (!text) {
-    console.log("[STT] Gemini returned no speech", {
-      finishReason: genData.candidates?.[0]?.finishReason || "none",
-    });
+export function pcmRms(pcm: Buffer): number {
+  if (pcm.length < 2) return 0;
+  let sum = 0;
+  let count = 0;
+  for (let i = 0; i + 1 < pcm.length; i += 16) {
+    const s = pcm.readInt16LE(i) / 32768;
+    sum += s * s;
+    count += 1;
   }
-  return text;
+  return count ? Math.sqrt(sum / count) : 0;
+}
+
+export function normalizeSttText(text: string): string {
+  const trimmed = (text || "").trim().replace(/^["'`]+|["'`]+$/g, "").trim();
+  if (!trimmed) return "";
+  const lower = trimmed.toLowerCase();
+  if (
+    /^(no speech|no audible speech|silence|\(no speech\)|\(silence\)|\[silence\]|\[no speech\]|\.\.\.|…|n\/a|none|empty|blank)$/i.test(
+      lower
+    )
+  ) {
+    return "";
+  }
+  return trimmed;
+}
+
+export async function geminiTranscribeAudio(apiKey: string, wav: Buffer, languageHint?: string): Promise<string> {
+  if (!wav.length || wav.length < 44 + 3200) return "";
+  try {
+    const models = await selectTranscribeModels(apiKey);
+    const languageRule =
+      languageHint && languageHint !== "Auto"
+        ? `Prefer transcribing in ${languageHint}.`
+        : "Automatically detect the spoken language. Use native script (never romanize Bengali or Hindi).";
+
+    const genData = await geminiGenerateContent(apiKey, models, {
+      contents: [
+        {
+          parts: [
+            {
+              text: `Transcribe this meeting audio. ${languageRule} Return only the spoken words. If there is no speech, return an empty string. Do not describe the audio or say that it is silent.`,
+            },
+            {
+              inlineData: {
+                mimeType: "audio/wav",
+                data: wav.toString("base64"),
+              },
+            },
+          ],
+        },
+      ],
+    });
+    const text = normalizeSttText(extractGeminiText(genData));
+    if (!text) {
+      console.log("[STT] Gemini returned no speech", {
+        finishReason: genData.candidates?.[0]?.finishReason || "none",
+      });
+    }
+    return text;
+  } catch (error) {
+    console.warn("[STT] Gemini transcription failed (non-fatal)", error);
+    return "";
+  }
 }
