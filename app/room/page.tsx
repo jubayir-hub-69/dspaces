@@ -367,6 +367,7 @@ const RoomCallStage = memo(function RoomCallStage({
             token={token}
             serverUrl={serverUrl}
             language={transcribeLanguage}
+            onSegment={onTranscript}
           />
         )}
         {isImportant && (
@@ -599,8 +600,14 @@ function RoomContent() {
   };
 
   const handleTranscriptSegment = useCallback((segment: TranscriptSegment, fullText: string) => {
-    fullTranscriptRef.current = fullText;
-    setTranscript(fullText || `${segment.speaker}: ${segment.text}`);
+    const line = segment.speaker ? `${segment.speaker}: ${segment.text}` : segment.text;
+    const incoming = (fullText || line).trim();
+    if (!incoming) return;
+    const current = fullTranscriptRef.current;
+    if (current.includes(line) && incoming.length <= current.length) return;
+    const next = incoming.length >= current.length ? incoming : `${current} ${line}`.trim();
+    fullTranscriptRef.current = next;
+    setTranscript(next);
   }, []);
 
   useEffect(() => {
@@ -657,6 +664,7 @@ function RoomContent() {
     agentAbortRef.current = abort;
     isRecordingRef.current = true;
     setIsRecording(true);
+    console.log("[STT] Start AI Recording", { roomId, language: aiLanguageRef.current });
     showDynamicToast("Server AI agent is joining to transcribe the room.");
 
     try {
@@ -696,7 +704,11 @@ function RoomContent() {
                 state?: string;
               };
               if (payload.error) {
+                console.error("[STT] transcription-agent error", payload.error);
                 showDynamicToast(payload.error);
+              }
+              if (payload.state) {
+                console.log("[STT] transcription-agent", payload.state);
               }
               if (payload.transcript) {
                 fullTranscriptRef.current = payload.transcript;

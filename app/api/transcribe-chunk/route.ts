@@ -40,8 +40,10 @@ export async function POST(req: Request) {
 
     const sampleRate = body.sampleRate === 48000 || body.sampleRate === 16000 ? body.sampleRate : 16000;
     const speaker = (body.speaker || caller.identity || "Participant").trim();
+    console.log("[STT] transcribe-chunk received", { room, speaker, bytes: pcm.length, sampleRate, language: body.language });
     const text = (await geminiTranscribeAudio(apiKey, pcm16ToWav(pcm, sampleRate), body.language)).trim();
     if (!text) {
+      console.log("[STT] transcribe-chunk empty transcript", { room, speaker });
       return NextResponse.json({ success: true, text: "" });
     }
 
@@ -56,17 +58,19 @@ export async function POST(req: Request) {
     try {
       const svc = await getRoomService(sanitizeMediaUrl(body.serverUrl));
       await svc.sendData(room, payload, 0, { topic: TRANSCRIPT_TOPIC });
-    } catch {
-      // KV already holds the transcript if the data broadcast misses a node.
+    } catch (error) {
+      console.warn("[STT] data-channel broadcast failed; transcript still persisted", error);
     }
 
+    console.log("[STT] transcribe-chunk ok", { room, speaker, text: text.slice(0, 120) });
     return NextResponse.json({
       success: true,
       text,
-      transcript: state?.transcript || "",
+      transcript: state?.transcript || text,
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Transcription failed";
+    console.error("[STT] transcribe-chunk error", message);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

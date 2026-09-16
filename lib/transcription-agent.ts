@@ -104,6 +104,7 @@ class GeminiSTTStream extends EventEmitter {
       if (!text || this.closed) return;
       this.emit("transcription", { text, isFinal: true });
     } catch (error) {
+      console.error("[STT] GeminiSTTStream flush failed", error);
       this.emit("error", error instanceof Error ? error : new Error("STT failed"));
     }
   }
@@ -221,8 +222,8 @@ async function startRoomAgent(options: AgentStartOptions): Promise<AgentHandle> 
         },
         room.localParticipant
       );
-    } catch {
-      // Keep the agent alive if a single STT request fails.
+    } catch (error) {
+      console.error("[STT] agent flush failed", speaker, error);
     }
   };
 

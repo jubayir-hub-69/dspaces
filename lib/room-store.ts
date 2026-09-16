@@ -91,14 +91,18 @@ export function roleForParticipant(state: RoomState | null, identity: string, im
 }
 
 export async function appendTranscript(room: string, segment: TranscriptSegment): Promise<RoomState | null> {
-  const current = await getRoomState(room);
-  if (!current) return null;
+  const current = (await getRoomState(room)) || emptyRoom("", "standard");
   const line = segment.speaker ? `${segment.speaker}: ${segment.text}` : segment.text;
   const transcript = segment.isFinal
     ? `${current.transcript} ${line}`.trim()
     : current.transcript;
   const segments = [...(current.transcriptSegments || []), segment].slice(-400);
-  return saveRoomState(room, { ...current, transcript, transcriptSegments: segments });
+  try {
+    return await saveRoomState(room, { ...current, transcript, transcriptSegments: segments });
+  } catch (error) {
+    console.error("[STT] failed to persist transcript", error);
+    return { ...current, transcript, transcriptSegments: segments };
+  }
 }
 
 const MAX_CHAT_MESSAGES = 200;
