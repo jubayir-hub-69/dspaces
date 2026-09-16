@@ -1,5 +1,12 @@
 import { isKvConfigured, kvGet, kvSet } from "./kv";
-import type { MeetingRole, RoomChatMessage, RoomMode, RoomState, TranscriptSegment } from "./types";
+import {
+  formatGroupedTranscript,
+  type MeetingRole,
+  type RoomChatMessage,
+  type RoomMode,
+  type RoomState,
+  type TranscriptSegment,
+} from "./types";
 
 const AVATARS_KEY = "dspaces_avatars";
 
@@ -92,11 +99,8 @@ export function roleForParticipant(state: RoomState | null, identity: string, im
 
 export async function appendTranscript(room: string, segment: TranscriptSegment): Promise<RoomState | null> {
   const current = (await getRoomState(room)) || emptyRoom("", "standard");
-  const line = segment.speaker ? `${segment.speaker}: ${segment.text}` : segment.text;
-  const transcript = segment.isFinal
-    ? `${current.transcript} ${line}`.trim()
-    : current.transcript;
   const segments = [...(current.transcriptSegments || []), segment].slice(-400);
+  const transcript = formatGroupedTranscript(segments);
   try {
     return await saveRoomState(room, { ...current, transcript, transcriptSegments: segments });
   } catch (error) {

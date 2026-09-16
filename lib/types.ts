@@ -105,3 +105,50 @@ export function isAiAgent(participant?: {
   }
   return false;
 }
+
+function speakersMatch(a?: string, b?: string) {
+  return (a || "").trim().toLowerCase() === (b || "").trim().toLowerCase();
+}
+
+function joinUtterance(prev: string, next: string) {
+  const left = prev.trim();
+  const right = next.trim();
+  if (!left) return right;
+  if (!right) return left;
+  if (left.endsWith(right) || left.endsWith(`${right}.`)) return left;
+  return `${left} ${right}`.replace(/\s+/g, " ").trim();
+}
+
+export function formatGroupedTranscript(segments: TranscriptSegment[]): string {
+  const groups: Array<{ speaker: string; text: string }> = [];
+  for (const segment of segments) {
+    const speaker = (segment.speaker || "Participant").trim();
+    const text = (segment.text || "").trim();
+    if (!text || segment.isFinal === false) continue;
+    const last = groups[groups.length - 1];
+    if (last && speakersMatch(last.speaker, speaker)) {
+      last.text = joinUtterance(last.text, text);
+    } else {
+      groups.push({ speaker, text });
+    }
+  }
+  return groups.map((group) => `${group.speaker}: ${group.text}`).join("\n");
+}
+
+export function appendGroupedTranscript(existing: string, speaker: string, text: string): string {
+  const who = (speaker || "Participant").trim();
+  const next = (text || "").trim();
+  if (!next) return (existing || "").trim();
+  const current = (existing || "").trim();
+  if (!current) return `${who}: ${next}`;
+
+  const blocks = current.split(/\n+/);
+  const last = blocks[blocks.length - 1] || "";
+  const match = last.match(/^([^:\n]+):\s*([\s\S]*)$/);
+  if (match && speakersMatch(match[1], who)) {
+    const merged = joinUtterance(match[2], next);
+    blocks[blocks.length - 1] = `${match[1].trim()}: ${merged}`;
+    return blocks.join("\n");
+  }
+  return `${current}\n${who}: ${next}`;
+}

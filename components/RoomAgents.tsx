@@ -5,6 +5,7 @@ import { useDataChannel, useParticipants, useRoomContext } from "@dtelecom/compo
 import { initialFromAccount, initialsAvatarHtml, isImageAvatar } from "../lib/account";
 import {
   CHAT_TRANSCRIPTION_TOPIC,
+  formatGroupedTranscript,
   parseParticipantMeta,
   TRANSCRIPT_TOPIC,
   type TranscriptSegment,
@@ -78,6 +79,7 @@ export function TranscriptListener({
 }) {
   const room = useRoomContext();
   const fullRef = useRef("");
+  const segmentsRef = useRef<TranscriptSegment[]>([]);
   const seenRef = useRef(new Set<string>());
   const onSegmentRef = useRef(onSegment);
   onSegmentRef.current = onSegment;
@@ -86,9 +88,9 @@ export function TranscriptListener({
     const key = `${segment.at}:${segment.speaker}:${segment.text}`;
     if (seenRef.current.has(key)) return;
     seenRef.current.add(key);
-    const line = segment.speaker ? `${segment.speaker}: ${segment.text}` : segment.text;
     if (segment.isFinal !== false) {
-      fullRef.current = `${fullRef.current} ${line}`.trim();
+      segmentsRef.current = [...segmentsRef.current, segment];
+      fullRef.current = formatGroupedTranscript(segmentsRef.current);
     }
     onSegmentRef.current(segment, fullRef.current);
   }, []);

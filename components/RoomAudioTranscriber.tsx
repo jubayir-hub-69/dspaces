@@ -229,8 +229,7 @@ export function RoomAudioTranscriber({
           if (data?.text) {
             console.log("[STT] transcript chunk", { speaker, text: data.text });
             const segment = { speaker, text: data.text, at: Date.now(), isFinal: true };
-            const line = `${speaker}: ${data.text}`;
-            onSegmentRef.current?.(segment, data.transcript || line);
+            onSegmentRef.current?.(segment, data.transcript || "");
           } else {
             console.log("[STT] transcribe-chunk returned no speech", { speaker });
           }

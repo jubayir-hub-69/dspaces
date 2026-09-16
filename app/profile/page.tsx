@@ -6,6 +6,7 @@ import { useWallet } from "@solana/wallet-adapter-react";
 import { useSiwsAuth } from "../../components/WalletProvider";
 import dynamic from "next/dynamic";
 import { AboutDspacesButton, AboutDspacesModal } from "../../components/AboutDspacesModal";
+import { BilingualSummary } from "../../components/BilingualSummary";
 import { SolanaNetworkBadge } from "../../components/SolanaNetworkBadge";
 import {
   checkEmailAvailable,
@@ -481,8 +482,12 @@ export default function ProfilePage() {
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
               </button>
             </div>
-            <div className="text-gray-300 text-sm whitespace-pre-wrap max-h-[60vh] overflow-y-auto custom-scrollbar pr-4 leading-relaxed font-medium">
-              {viewSummary}
+            <div className="max-h-[60vh] overflow-y-auto custom-scrollbar pr-4">
+              <BilingualSummary
+                summary={viewSummary}
+                size="md"
+                className="text-gray-300 text-sm whitespace-pre-wrap leading-relaxed font-medium"
+              />
             </div>
           </div>
         </div>

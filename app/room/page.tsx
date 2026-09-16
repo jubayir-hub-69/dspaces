@@ -11,6 +11,7 @@ import {
 import "@dtelecom/components-styles";
 import "./room-layout.css";
 import { AboutDspacesButton, AboutDspacesModal } from "../../components/AboutDspacesModal";
+import { BilingualSummary } from "../../components/BilingualSummary";
 import { ImportantMeetingControls } from "../../components/ImportantMeetingControls";
 import { ImportantMeetingStage } from "../../components/ImportantMeetingStage";
 import { HostModeration } from "../../components/HostModeration";
@@ -18,7 +19,7 @@ import { ParticipantAvatarSync, TranscriptListener } from "../../components/Room
 import { RoomAudioTranscriber } from "../../components/RoomAudioTranscriber";
 import { upsertMeetingHistory } from "../../lib/meeting-history";
 import { isImageAvatar } from "../../lib/account";
-import { isHostRole, type TranscriptSegment } from "../../lib/types";
+import { appendGroupedTranscript, formatGroupedTranscript, isHostRole, type TranscriptSegment } from "../../lib/types";
 
 interface ChatMessage {
   sender: "user" | "ai";
@@ -563,9 +564,12 @@ function RoomContent() {
     showDynamicToast("Report Downloaded Successfully!");
   };
 
+  const visibleSummaryRef = useRef("");
+
   const handleCopySummary = () => {
-    if (!summary) return;
-    navigator.clipboard.writeText(summary);
+    const text = visibleSummaryRef.current || summary;
+    if (!text) return;
+    navigator.clipboard.writeText(text);
     showDynamicToast("Summary copied to clipboard!");
   };
 
@@ -599,16 +603,21 @@ function RoomContent() {
     return text;
   };
 
-  const handleTranscriptSegment = useCallback((segment: TranscriptSegment, fullText: string) => {
-    const line = segment.speaker ? `${segment.speaker}: ${segment.text}` : segment.text;
-    const incoming = (fullText || line).trim();
-    if (!incoming) return;
-    const current = fullTranscriptRef.current;
-    if (current.includes(line) && incoming.length <= current.length) return;
-    const next = incoming.length >= current.length ? incoming : `${current} ${line}`.trim();
-    fullTranscriptRef.current = next;
-    setTranscript(next);
+  const applyTranscript = useCallback((next: string) => {
+    const text = next.trim();
+    if (!text) return;
+    fullTranscriptRef.current = text;
+    setTranscript(text);
   }, []);
+
+  const handleTranscriptSegment = useCallback((segment: TranscriptSegment, fullText: string) => {
+    const grouped = (fullText || "").trim();
+    if (grouped && grouped.length >= fullTranscriptRef.current.length) {
+      applyTranscript(grouped);
+      return;
+    }
+    applyTranscript(appendGroupedTranscript(fullTranscriptRef.current, segment.speaker, segment.text));
+  }, [applyTranscript]);
 
   useEffect(() => {
     if (!roomId || !token) return;
@@ -618,9 +627,10 @@ function RoomContent() {
         const snap = await fetch(`/api/transcription-agent?room=${encodeURIComponent(roomId)}`);
         const body = await snap.json();
         if (cancelled) return;
-        if (body.transcript) {
-          fullTranscriptRef.current = body.transcript;
-          setTranscript(body.transcript);
+        if (Array.isArray(body.segments) && body.segments.length > 0) {
+          applyTranscript(formatGroupedTranscript(body.segments));
+        } else if (body.transcript) {
+          applyTranscript(body.transcript);
         }
         if (body.agentActive) {
           isRecordingRef.current = true;
@@ -633,7 +643,7 @@ function RoomContent() {
     return () => {
       cancelled = true;
     };
-  }, [roomId, token]);
+  }, [applyTranscript, roomId, token]);
 
   useEffect(() => {
     if (!isRecording || !roomId) return;
@@ -642,16 +652,17 @@ function RoomContent() {
       try {
         const snap = await fetch(`/api/transcription-agent?room=${encodeURIComponent(roomId)}`);
         const body = await snap.json();
-        if (body.transcript) {
-          fullTranscriptRef.current = body.transcript;
-          setTranscript(body.transcript);
+        if (Array.isArray(body.segments) && body.segments.length > 0) {
+          applyTranscript(formatGroupedTranscript(body.segments));
+        } else if (body.transcript) {
+          applyTranscript(body.transcript);
         }
       } catch {
         // Polling is a fallback while the agent writes to KV / data channel.
       }
     }, 2000);
     return () => clearInterval(poll);
-  }, [isRecording, roomId]);
+  }, [applyTranscript, isRecording, roomId]);
 
   const handleStartAI = async () => {
     if (!token) {
@@ -710,9 +721,11 @@ function RoomContent() {
               if (payload.state) {
                 console.log("[STT] transcription-agent", payload.state);
               }
-              if (payload.transcript) {
-                fullTranscriptRef.current = payload.transcript;
-                setTranscript(payload.transcript);
+              const sseSegments = (payload as { segments?: TranscriptSegment[] }).segments;
+              if (Array.isArray(sseSegments) && sseSegments.length > 0) {
+                applyTranscript(formatGroupedTranscript(sseSegments));
+              } else if (payload.transcript) {
+                applyTranscript(payload.transcript);
               }
             } catch {
               // Ignore malformed SSE frames.
@@ -721,9 +734,10 @@ function RoomContent() {
         }
       } else {
         const data = await res.json();
-        if (data.transcript) {
-          fullTranscriptRef.current = data.transcript;
-          setTranscript(data.transcript);
+        if (Array.isArray(data.segments) && data.segments.length > 0) {
+          applyTranscript(formatGroupedTranscript(data.segments));
+        } else if (data.transcript) {
+          applyTranscript(data.transcript);
         }
       }
     } catch (error: unknown) {
@@ -753,9 +767,10 @@ function RoomContent() {
       });
       const snap = await fetch(`/api/transcription-agent?room=${encodeURIComponent(roomId)}`);
       const snapData = await snap.json();
-      if (snapData.transcript) {
-        fullTranscriptRef.current = snapData.transcript;
-        setTranscript(snapData.transcript);
+      if (Array.isArray(snapData.segments) && snapData.segments.length > 0) {
+        applyTranscript(formatGroupedTranscript(snapData.segments));
+      } else if (snapData.transcript) {
+        applyTranscript(snapData.transcript);
       }
       const raw = (fullTranscriptRef.current || transcript).trim();
       const nativeTranscript = await runNativeScriptRestore(raw);
@@ -1016,7 +1031,7 @@ function RoomContent() {
                 )}
               </div>
               {transcript ? (
-                <p className="text-gray-300 text-xs leading-relaxed italic">"{transcript}"</p>
+                <p className="text-gray-300 text-xs leading-relaxed whitespace-pre-wrap">{transcript}</p>
               ) : (
                 <p className="text-xs text-gray-600">Start the server AI agent to transcribe everyone in the room...</p>
               )}
@@ -1026,9 +1041,13 @@ function RoomContent() {
               <div className="bg-blue-900/10 border border-[#00e5ff]/20 rounded-xl p-3.5 flex flex-col gap-3">
                 <div>
                   <h3 className="font-bold text-[#00e5ff] mb-1.5 text-xs">AI Generated Summary</h3>
-                  <div className={`text-xs whitespace-pre-wrap leading-relaxed ${summary.startsWith('❌') ? 'text-red-400' : 'text-gray-200'}`}>
-                    {summary}
-                  </div>
+                  <BilingualSummary
+                    summary={summary}
+                    onVisibleChange={(text) => {
+                      visibleSummaryRef.current = text;
+                    }}
+                    className={`text-xs whitespace-pre-wrap leading-relaxed ${summary.startsWith('❌') ? 'text-red-400' : 'text-gray-200'}`}
+                  />
                 </div>
                 
                 {!summary.startsWith('❌') && (
