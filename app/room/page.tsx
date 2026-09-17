@@ -16,7 +16,6 @@ import { ImportantMeetingControls } from "../../components/ImportantMeetingContr
 import { ImportantMeetingStage } from "../../components/ImportantMeetingStage";
 import { HostModeration } from "../../components/HostModeration";
 import { ParticipantAvatarSync, TranscriptListener } from "../../components/RoomAgents";
-import { RoomAudioTranscriber } from "../../components/RoomAudioTranscriber";
 import { upsertMeetingHistory } from "../../lib/meeting-history";
 import { isImageAvatar } from "../../lib/account";
 import { appendGroupedTranscript, formatGroupedTranscript, isHostRole, type TranscriptSegment } from "../../lib/types";
@@ -303,8 +302,6 @@ type RoomCallStageProps = {
   roomId?: string;
   avatars?: Record<string, string>;
   onTranscript?: (segment: TranscriptSegment, fullText: string) => void;
-  transcribeActive?: boolean;
-  transcribeLanguage?: string;
 };
 
 const RoomCallStage = memo(function RoomCallStage({
@@ -320,8 +317,6 @@ const RoomCallStage = memo(function RoomCallStage({
   roomId = "",
   avatars = {},
   onTranscript,
-  transcribeActive = false,
-  transcribeLanguage = "Auto",
 }: RoomCallStageProps) {
   const publishOnJoin = !isImportant || isHost;
   return (
@@ -361,16 +356,6 @@ const RoomCallStage = memo(function RoomCallStage({
         <KickedListener showDynamicToast={showDynamicToast} />
         <ParticipantAvatarSync fallbackAvatars={avatars} />
         {onTranscript && <TranscriptListener onSegment={onTranscript} roomId={roomId} />}
-        {transcribeActive && (
-          <RoomAudioTranscriber
-            active={transcribeActive}
-            roomId={roomId}
-            token={token}
-            serverUrl={serverUrl}
-            language={transcribeLanguage}
-            onSegment={onTranscript}
-          />
-        )}
         {isImportant && (
           <ImportantMeetingControls
             isHost={isHost}
@@ -976,8 +961,6 @@ function RoomContent() {
         roomId={roomId}
         avatars={avatarMap}
         onTranscript={handleTranscriptSegment}
-        transcribeActive={isRecording}
-        transcribeLanguage={aiLanguage}
       />
 
       {!isAIPanelOpen && (

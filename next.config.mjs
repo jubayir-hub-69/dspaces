@@ -8,6 +8,7 @@ const nextConfig = {
       "@discordjs/opus",
       "opusscript",
       "werift",
+      "ws",
     ],
   },
   typescript: {
@@ -43,6 +44,7 @@ const nextConfig = {
         http: false,
         https: false,
         zlib: false,
+        ws: false,
       };
     }
     return config;
